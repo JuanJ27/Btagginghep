@@ -1,0 +1,7 @@
+awkward
+uproot
+pandas
+numpy
+matplotlib
+seaborn
+multiprocessing
