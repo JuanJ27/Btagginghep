@@ -3,10 +3,8 @@
 int main() {
     // Lista de archivos de entrada
     std::vector<std::string> inputFiles = {
-        "../../rootfiles/run_01.root",
-        "../../rootfiles/run_02.root",
-        "../../rootfiles/run_03.root",
-        "../../rootfiles/run_04.root"
+        "../Ospi/Zp20Mod.root",
+        "../Ospi/Zp90Mod.root"
     };
 
     // Crear instancia de JetAnalyzer
