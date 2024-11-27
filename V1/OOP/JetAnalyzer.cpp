@@ -170,8 +170,8 @@ void JetAnalyzer::InitializeHistograms() {
         // Histograma 2D de DeltaR vs Porcentaje acumulado de pT
         hCumulativePT_vs_DeltaR[i] = new TH2F(Form("hCumulativePT_vs_DeltaR%d", i+1),
                                               Form("DeltaR vs Porcentaje acumulado de pT del Jet %d", i+1),
-                                              50, 0, 0.4,    // Eje X: DeltaR (0 - 0.4)
-                                              50, 0.4, 0.94);   // Eje Y: Porcentaje acumulado de pT (0% - 100%)
+                                              25, 0, 0.4,    // Eje X: DeltaR (0 - 0.4)
+                                              25, 0, 1);   // Eje Y: Porcentaje acumulado de pT (0% - 100%)
         hCumulativePT_vs_DeltaR[i]->SetLineColor(i+1);
         hCumulativePT_vs_DeltaR[i]->SetLineWidth(2);
     }
@@ -800,12 +800,14 @@ void JetAnalyzer::DrawHistograms() {
         TCanvas* cCumulativePT_vs_DeltaR = new TCanvas(Form("cCumulativePT_vs_DeltaR%d", i+1),
                                                        Form("Porcentaje acumulado de pT vs DeltaR del Jet %d", i+1),
                                                        600, 400);
-        gStyle->SetNumberContours(999); // Número de colores a utilizar
+        gStyle->SetNumberContours(10); // Número de colores a utilizar
         hCumulativePT_vs_DeltaR[i]->GetXaxis()->SetTitle("#DeltaR");
         hCumulativePT_vs_DeltaR[i]->GetYaxis()->SetTitle("Porcentaje acumulado de pT");
-        hCumulativePT_vs_DeltaR[i]->Draw("COLZ");
-
+        gPad->SetLogz();
+        hCumulativePT_vs_DeltaR[i]->Draw("SURF2");
         cCumulativePT_vs_DeltaR->SaveAs(Form("plots/CumulativePT_vs_DeltaR_Jet%d.png", i+1));
+        hCumulativePT_vs_DeltaR[i]->Draw("CONT1");
+        cCumulativePT_vs_DeltaR->SaveAs(Form("plots/CONT_CumulativePT_vs_DeltaR_Jet%d.png", i+1));
         delete cCumulativePT_vs_DeltaR;
     }
 
