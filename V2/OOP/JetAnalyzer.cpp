@@ -353,7 +353,6 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         hR95PercentPT[i]->Fill(r95PercentPT);
     }
 }
-
 void JetAnalyzer::DrawHistograms() {
     // Configuración general
     gStyle->SetOptStat(0); // Desactivar la caja de estadísticas
@@ -746,18 +745,19 @@ void JetAnalyzer::DrawHistograms() {
         TCanvas* cCumulativePT_vs_DeltaR = new TCanvas(Form("cCumulativePT_vs_DeltaR%d", i+1),
                                                        Form("Porcentaje acumulado de pT vs DeltaR del Jet %d", i+1),
                                                        600, 400);
-        gStyle->SetNumberContours(999); // Número de colores a utilizar
+        gStyle->SetNumberContours(10); // Número de colores a utilizar
         hCumulativePT_vs_DeltaR[i]->GetXaxis()->SetTitle("#DeltaR");
         hCumulativePT_vs_DeltaR[i]->GetYaxis()->SetTitle("Porcentaje acumulado de pT");
-        hCumulativePT_vs_DeltaR[i]->Draw("COLZ");
-
+        gPad->SetLogz();
+        hCumulativePT_vs_DeltaR[i]->Draw("SURF2");
         cCumulativePT_vs_DeltaR->SaveAs(Form("plots/CumulativePT_vs_DeltaR_Jet%d.png", i+1));
+        hCumulativePT_vs_DeltaR[i]->Draw("CONT1");
+        cCumulativePT_vs_DeltaR->SaveAs(Form("plots/CONT_CumulativePT_vs_DeltaR_Jet%d.png", i+1));
         delete cCumulativePT_vs_DeltaR;
     }
 
     std::cout << "Los histogramas se han dibujado y guardado correctamente." << std::endl;
 }
-
 
 void JetAnalyzer::SaveHistograms(const std::string& outputDir) {
     // Crear directorio de salida si no existe
