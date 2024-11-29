@@ -3,34 +3,6 @@
 #include <cmath>
 #include <fstream>
 
-// Add return type TH1F*
-TH1F* JetAnalyzer::CreateStyledHistogram(const TString& name, const TString& title, int bins, double min, double max, Color_t color, int style, int width) {
-    TH1F *hist = new TH1F(name, title, bins, min, max);
-    hist->SetLineColor(color);
-    hist->SetLineStyle(style);
-    hist->SetLineWidth(width);
-    return hist;
-}
-
-// Add return type TCanvas*
-TCanvas* JetAnalyzer::CreateCanvasWithLegend(const char* canvasName, const char* title, TH1F* hists[], int numHists, const char* legendTitle) {
-    TCanvas *canvas = new TCanvas(canvasName, title, 600, 400);
-    gStyle->SetOptStat(0); 
-    gPad->SetLogy();       
-    hists[0]->Draw();      
-    for (int i = 1; i < numHists; i++) {
-        hists[i]->Draw("SAME");
-    }
-    TLegend *legend = new TLegend(0.7, 0.7, 0.9, 0.9); 
-    legend->SetHeader(legendTitle, "C");
-    for (int i = 0; i < numHists; i++) {
-        legend->AddEntry(hists[i], Form("Jet %d", i + 1), "l");
-    }
-    legend->Draw();
-    canvas->Print(Form("plots/%s.png", canvasName));
-    return canvas; // Return the created canvas
-}
-
 JetAnalyzer::JetAnalyzer(const std::vector<std::string>& inputFiles) {
     // Inicializar TChain y agregar archivos
     fChain = new TChain("Delphes", "");
@@ -38,7 +10,7 @@ JetAnalyzer::JetAnalyzer(const std::vector<std::string>& inputFiles) {
         fChain->Add(file.c_str());
     }
 
-    // Crear instancia de MyClass para acceder a las ramas del árbol
+    // Crear instancia de MyClass para acceder a las ramas del arbol
     t = new MyClass(fChain);
     nentries = t->fChain->GetEntries();
 
@@ -85,48 +57,201 @@ JetAnalyzer::~JetAnalyzer() {
 }
 
 void JetAnalyzer::InitializeHistograms() {
-    Color_t colors[] = {kRed, kBlue, kGreen, kBlack};
-    
     // Histograma de jets por evento
-    hJetsPerEvent = CreateStyledHistogram("hJetsPerEvent", "Numero de Jets por Evento", 10, 1, 10, kBlack, 1, 2);
+    hJetsPerEvent = new TH1F("hJetsPerEvent", "Numero de Jets por Evento", 10, 0, 10);
 
     // Inicializar histogramas para los primeros 4 jets
     for (int i = 0; i < 4; i++) {
-        hJetPT[i] = CreateStyledHistogram(Form("hJetPT%d", i), "pT del Jet", 200, 0, 200, colors[i], i + 1, 2);
-        hJetEta[i] = CreateStyledHistogram(Form("hJetEta%d", i), "Eta del Jet", 100, -5, 5, colors[i], i + 1, 2);
-        hJetPhi[i] = CreateStyledHistogram(Form("hJetPhi%d", i), "Phi del Jet", 100, -3.5, 3.5, colors[i], i + 1, 2);
-        hDeltaRPar[i] = CreateStyledHistogram(Form("hDeltaRPar%d", i), "Delta R entre Jets y Particulas", 100, 0, 9, colors[i], i + 1, 2);
-        hChargedParticles[i] = CreateStyledHistogram(Form("hChargedParticles%d", i), "Numero de Particulas Cargadas", 50, 0, 25, colors[i], i + 1, 2);
-        hNeutralsParticles[i] = CreateStyledHistogram(Form("hNeutralsParticles%d", i), "Numero de Particulas Neutras", 50, 0, 25, colors[i], i + 1, 2);
-        hChargedPTFraction[i] = CreateStyledHistogram(Form("hChargedPTFraction%d", i), "Fraccion de pT de Particulas Cargadas", 100, 0, 1, colors[i], i + 1, 2);
-        hNeutralPTFraction[i] = CreateStyledHistogram(Form("hNeutralPTFraction%d", i), "Fraccion de pT de Particulas Neutras", 100, 0, 1, colors[i], i + 1, 2);
-        hAveragePT[i] = CreateStyledHistogram(Form("hAveragePT%d", i), "pT Promedio de Particulas", 100, 0, 50, colors[i], i + 1, 2);
-        hParticlesBelowAvgPT[i] = CreateStyledHistogram(Form("hParticlesBelowAvgPT%d", i), "Numero de Particulas con pT < pT Promedio", 100, 0, 110, colors[i], i + 1, 2);
-        hParticlesAboveAvgPT[i] = CreateStyledHistogram(Form("hParticlesAboveAvgPT%d", i), "Numero de Particulas con pT > pT Promedio", 100, 0, 50, colors[i], i + 1, 2);
-        hMaxPTRatio[i] = CreateStyledHistogram(Form("hMaxPTRatio%d", i), "pT(par_max_pT) / pT(j_r) del Jet", 100, 0, 3.5, colors[i], i + 1, 2);
-        hMinPTRatio[i] = CreateStyledHistogram(Form("hMinPTRatio%d", i), "pT(par_min_pT) / pT(j_r) del Jet", 100, 0, 0.15, colors[i], i + 1, 2);
-        hMaxDRRatio[i] = CreateStyledHistogram(Form("hMaxDRRatio%d", i), "pT(par_max_DR) / pT(j_r) del Jet", 100, 0, 2.5, colors[i], i + 1, 2);
-        hMinDRRatio[i] = CreateStyledHistogram(Form("hMinDRRatio%d", i), "pT(par_min_DR) / pT(j_r) del Jet", 100, 0, 2.5, colors[i], i + 1, 2);
-        hDeltaRMaxPT[i] = CreateStyledHistogram(Form("hDeltaRMaxPT%d", i), "DeltaR(par_max_pT, j_r) del Jet", 100, 0, 0.4, colors[i], i + 1, 2);
-        hDeltaRMinPT[i] = CreateStyledHistogram(Form("hDeltaRMinPT%d", i), "DeltaR(par_min_pT, j_r) del Jet", 100, 0, 0.4, colors[i], i + 1, 2);
-        hDeltaRMaxDR[i] = CreateStyledHistogram(Form("hDeltaRMaxDR%d", i), "DeltaR(par_max_DR, j_r) del Jet", 100, 0, 0.4, colors[i], i + 1, 2);
-        hDeltaRMinDR[i] = CreateStyledHistogram(Form("hDeltaRMinDR%d", i), "DeltaR(par_min_DR, j_r) del Jet", 100, 0, 0.4, colors[i], i + 1, 2);
-        hPTDifference[i] = CreateStyledHistogram(Form("hPTDifference%d", i), "pT(par_max_pT) - pT(par_min_pT) del Jet", 200, 0, 200, colors[i], i + 1, 2);
-        hR50PercentPT[i] = CreateStyledHistogram(Form("hR50PercentPT%d", i), "R para 50%% pT total del Jet", 100, 0, 0.4, colors[i], i + 1, 2);
-        hR95PercentPT[i] = CreateStyledHistogram(Form("hR75PercentPT%d", i), "R para 95%% pT total del Jet", 100, 0, 0.4, colors[i], i + 1, 2);
+        // pT de los jets
+        hJetPT[i] = new TH1F(Form("hJetPT%d", i), "pT del Jet", 100, 5, 210);
+        hJetPT[i]->SetLineColor(i+1);
+        hJetPT[i]->SetLineWidth(2);
+
+        // Eta de los jets
+        hJetEta[i] = new TH1F(Form("hJetEta%d", i), "Eta del Jet", 100, -5.5, 5.5);
+        hJetEta[i]->SetLineColor(i+1);
+        hJetEta[i]->SetLineWidth(2);
+
+        // Phi de los jets
+        hJetPhi[i] = new TH1F(Form("hJetPhi%d", i), "Phi del Jet", 100, -3.5, 3.5);
+        hJetPhi[i]->SetLineColor(i+1);
+        hJetPhi[i]->SetLineWidth(2);
+
+        // Numero de particulas cargadas por jet
+        hChargedParticles[i] = new TH1F(Form("hChargedParticles%d", i), "Numero de particulas cargadas del Jet", 27, 0, 27);
+        hChargedParticles[i]->SetLineColor(i+1);
+        hChargedParticles[i]->SetLineWidth(2);
+
+        // Numero de particulas neutras por jet
+        hNeutralsParticles[i] = new TH1F(Form("hNeutralsParticles%d", i), "Numero de particulas neutras del Jet", 27, 0, 27);
+        hNeutralsParticles[i]->SetLineColor(i+1);
+        hNeutralsParticles[i]->SetLineWidth(2);
+
+        // Fraccion de pT cargado del jet
+        hChargedPTFraction[i] = new TH1F(Form("hChargedPTFraction%d", i), "Fraccion de pT cargado del Jet", 100, 0, 1);
+        hChargedPTFraction[i]->SetLineColor(i+1);
+        hChargedPTFraction[i]->SetLineWidth(2);
+
+        // Fraccion de pT neutro del jet
+        hNeutralPTFraction[i] = new TH1F(Form("hNeutralPTFraction%d", i), "Fraccion de pT neutro del Jet", 100, 0, 1);
+        hNeutralPTFraction[i]->SetLineColor(i+1);
+        hNeutralPTFraction[i]->SetLineWidth(2);
+
+        // pT promedio de las particulas de cada jet
+        hAveragePT[i] = new TH1F(Form("hAveragePT%d", i), "pT promedio de las particulas del Jet", 100, 0, 60);
+        hAveragePT[i]->SetLineColor(i+1);
+        hAveragePT[i]->SetLineWidth(2);
+
+        // Numero de particulas con pT por debajo del pT promedio por cada jet
+        hParticlesBelowAvgPT[i] = new TH1F(Form("hParticlesBelowAvgPT%d", i), "Numero de particulas con pT < pT promedio del Jet", 120, 0, 120);
+        hParticlesBelowAvgPT[i]->SetLineColor(i+1);
+        hParticlesBelowAvgPT[i]->SetLineWidth(2);
+
+        // Numero de particulas con pT por encima del pT promedio por cada jet
+        hParticlesAboveAvgPT[i] = new TH1F(Form("hParticlesAboveAvgPT%d", i), "Numero de particulas con pT > pT promedio del Jet", 60, 0, 60);
+        hParticlesAboveAvgPT[i]->SetLineColor(i+1);
+        hParticlesAboveAvgPT[i]->SetLineWidth(2);
+
+        // pT(par_max_pT) / pT(j_r)
+        hMaxPTRatio[i] = new TH1F(Form("hMaxPTRatio%d", i), "pT(par_max_pT) / pT(j_r) del Jet", 100, 0, 3.5);
+        hMaxPTRatio[i]->SetLineColor(i+1);
+        hMaxPTRatio[i]->SetLineWidth(2);
+
+        // pT(par_min_pT) / pT(j_r)
+        hMinPTRatio[i] = new TH1F(Form("hMinPTRatio%d", i), "pT(par_min_pT) / pT(j_r) del Jet", 100, 0, 0.15);
+        hMinPTRatio[i]->SetLineColor(i+1);
+        hMinPTRatio[i]->SetLineWidth(2);
+
+        // pT(par_max_DR) / pT(j_r)
+        hMaxDRRatio[i] = new TH1F(Form("hMaxDRRatio%d", i), "pT(par_max_DR) / pT(j_r) del Jet", 100, 0, 2.5);
+        hMaxDRRatio[i]->SetLineColor(i+1);
+        hMaxDRRatio[i]->SetLineWidth(2);
+
+        // pT(par_min_DR) / pT(j_r)
+        hMinDRRatio[i] = new TH1F(Form("hMinDRRatio%d", i), "pT(par_min_DR) / pT(j_r) del Jet", 100, 0, 2.5);
+        hMinDRRatio[i]->SetLineColor(i+1);
+        hMinDRRatio[i]->SetLineWidth(2);
+
+        // DeltaR(par_max_pT, j_r)
+        hDeltaRMaxPT[i] = new TH1F(Form("hDeltaRMaxPT%d", i), "DeltaR(par_max_pT, j_r) del Jet", 100, 0, 0.4);
+        hDeltaRMaxPT[i]->SetLineColor(i+1);
+        hDeltaRMaxPT[i]->SetLineWidth(2);
+
+        // DeltaR(par_min_pT, j_r)
+        hDeltaRMinPT[i] = new TH1F(Form("hDeltaRMinPT%d", i), "DeltaR(par_min_pT, j_r) del Jet", 100, 0, 0.4);
+        hDeltaRMinPT[i]->SetLineColor(i+1);
+        hDeltaRMinPT[i]->SetLineWidth(2);
+
+        // DeltaR(par_max_DR, j_r)
+        hDeltaRMaxDR[i] = new TH1F(Form("hDeltaRMaxDR%d", i), "DeltaR(par_max_DR, j_r) del Jet", 100, 0, 0.4);
+        hDeltaRMaxDR[i]->SetLineColor(i+1);
+        hDeltaRMaxDR[i]->SetLineWidth(2);
+
+        // DeltaR(par_min_DR, j_r)
+        hDeltaRMinDR[i] = new TH1F(Form("hDeltaRMinDR%d", i), "DeltaR(par_min_DR, j_r) del Jet", 100, 0, 0.4);
+        hDeltaRMinDR[i]->SetLineColor(i+1);
+        hDeltaRMinDR[i]->SetLineWidth(2);
+
+        // pT(par_max_pT) - pT(par_min_pT)
+        hPTDifference[i] = new TH1F(Form("hPTDifference%d", i), "pT(par_max_pT) - pT(par_min_pT) del Jet", 100, 0, 200);
+        hPTDifference[i]->SetLineColor(i+1);
+        hPTDifference[i]->SetLineWidth(2);
+
+        // R al 50% del pT total del jet
+        hR50PercentPT[i] = new TH1F(Form("hR50PercentPT%d", i), "DeltaR para 50% pT total del Jet", 100, 0, 0.4);
+        hR50PercentPT[i]->SetLineColor(i+1);
+        hR50PercentPT[i]->SetLineWidth(2);
+
+        // R al 95% del pT total del jet
+        hR95PercentPT[i] = new TH1F(Form("hR95PercentPT%d", i), "DeltaR para 95% pT total del Jet", 100, 0, 0.4);
+        hR95PercentPT[i]->SetLineColor(i+1);
+        hR95PercentPT[i]->SetLineWidth(2);
 
         // Histograma 2D de DeltaR vs Porcentaje acumulado de pT
         hCumulativePT_vs_DeltaR[i] = new TH2F(Form("hCumulativePT_vs_DeltaR%d", i+1),
                                               Form("DeltaR vs Porcentaje acumulado de pT del Jet %d", i+1),
-                                              50, 0, 0.4,    // Eje X: DeltaR (0 - 0.4)
-                                              50, 0.4, 0.94);   // Eje Y: Porcentaje acumulado de pT (0% - 100%)
+                                              25, 0, 0.4,    // Eje X: DeltaR (0 - 0.4)
+                                              25, 0, 1);   // Eje Y: Porcentaje acumulado de pT (0% - 100%)
         hCumulativePT_vs_DeltaR[i]->SetLineColor(i+1);
         hCumulativePT_vs_DeltaR[i]->SetLineWidth(2);
+
+    // pT vs Eta de los jets
+        hPT_vs_Eta[i] = new TH2F(Form("hPT_vs_Eta%d", i), Form("pT vs Eta del Jet %d", i+1),
+                                50, -5.5, 5.5, // Eje X: Eta
+                                50, 0, 100);   // Eje Y: pT
+        hPT_vs_Eta[i]->GetXaxis()->SetTitle("Eta");
+        hPT_vs_Eta[i]->GetYaxis()->SetTitle("pT (GeV)");
+        hPT_vs_Eta[i]->SetLineColor(i+1);
+        hPT_vs_Eta[i]->SetLineWidth(2);
+
+    // Numero de particulas cargadas vs neutras por jet
+        hCharged_vs_NeutralParticles[i] = new TH2F(Form("hCharged_vs_NeutralParticles%d", i),
+                                                Form("Cargadas vs Neutras del Jet %d", i+1),
+                                                15, 0, 15, // Eje X: Cargadas
+                                                15, 0, 15); // Eje Y: Neutras
+        hCharged_vs_NeutralParticles[i]->GetXaxis()->SetTitle("Numero de Particulas Cargadas");
+        hCharged_vs_NeutralParticles[i]->GetYaxis()->SetTitle("Numero de Particulas Neutras");
+        hCharged_vs_NeutralParticles[i]->SetLineColor(i+1);
+        hCharged_vs_NeutralParticles[i]->SetLineWidth(2);
+
+
+    // Fraccion de pT Cargado vs Neutro
+        hChargedPTFraction_vs_NeutralPTFraction[i] = new TH2F(Form("hChargedPTFraction_vs_NeutralPTFraction%d", i),
+                                                                Form("Fraccion de pT Cargado vs Neutro del Jet %d", i+1),
+                                                                10, 0, 1, // Eje X: Fraccion Cargado
+                                                                10, 0, 1); // Eje Y: Fraccion Neutro
+        hChargedPTFraction_vs_NeutralPTFraction[i]->GetXaxis()->SetTitle("Fraccion de pT Cargado");
+        hChargedPTFraction_vs_NeutralPTFraction[i]->GetYaxis()->SetTitle("Fraccion de pT Neutro");
+        hChargedPTFraction_vs_NeutralPTFraction[i]->SetLineColor(i+1);
+        hChargedPTFraction_vs_NeutralPTFraction[i]->SetLineWidth(2);
+
+    // pT Promedio vs Numero Total de Particulas
+        hAveragePT_vs_TotalParticles[i] = new TH2F(Form("hAveragePT_vs_TotalParticles%d", i),
+                                                Form("pT Promedio vs Total Particulas del Jet %d", i+1),
+                                                30, 0, 30, // Eje X: Total Particulas
+                                                40, 0, 20);  // Eje Y: pT Promedio
+        hAveragePT_vs_TotalParticles[i]->GetXaxis()->SetTitle("Numero Total de Particulas");
+        hAveragePT_vs_TotalParticles[i]->GetYaxis()->SetTitle("pT Promedio (GeV)");
+        hAveragePT_vs_TotalParticles[i]->SetLineColor(i+1);
+        hAveragePT_vs_TotalParticles[i]->SetLineWidth(2);
+
+    /* Delta R vs Diferencia en pT entre pares de jets
+        hDeltaR_vs_PTDifference[i] = new TH2F(Form("hDeltaR_vs_PTDifference%d", i),
+                                            Form("DeltaR vs Diferencia en pT para Par %d", i+1),
+                                            50, 0, 10, // Eje X: DeltaR
+                                            100, 0, 200); // Eje Y: Diferencia en pT
+        hDeltaR_vs_PTDifference[i]->GetXaxis()->SetTitle("DeltaR");
+        hDeltaR_vs_PTDifference[i]->GetYaxis()->SetTitle("|pT1 - pT2| (GeV)");
+        hDeltaR_vs_PTDifference[i]->SetLineColor(i+1);
+        hDeltaR_vs_PTDifference[i]->SetLineWidth(2);*/
+
+    // pT(par_max_pT) vs Delta R(par_max_pT, j_r)
+        hMaxPTRatio_vs_DeltaRMaxPT[i] = new TH2F(Form("hMaxPTRatio_vs_DeltaRMaxPT%d", i),
+                                                Form("pT(par_max_pT) / pT(j_r) vs DeltaR(par_max_pT, j_r) del Jet %d", i+1),
+                                                10, 0, 2, // Eje X: pT Ratio
+                                                10, 0, 0.4); // Eje Y: DeltaR
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->GetXaxis()->SetTitle("pT(par_{max}^{PT}) / pT(j_{r})");
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->GetYaxis()->SetTitle("DeltaR(par_{max}^{PT}, j_{r})");
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->SetLineColor(i+1);
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->SetLineWidth(2);
+
+    // R50% vs R95%
+        hR50_vs_R95[i] = new TH2F(Form("hR50_vs_R95%d", i),
+                                Form("R50%% vs R95%% del Jet %d", i+1),
+                                10, 0, 0.4, // Eje X: R50%
+                                10, 0, 0.4); // Eje Y: R95%
+        hR50_vs_R95[i]->GetXaxis()->SetTitle("R50% del pT total");
+        hR50_vs_R95[i]->GetYaxis()->SetTitle("R95% del pT total");
+        hR50_vs_R95[i]->SetLineColor(i+1);
+        hR50_vs_R95[i]->SetLineWidth(2);
+
     }
 
     // Delta R entre los primeros 4 jets, por parejas
     for (int i = 0; i < 6; i++) {
-        hDeltaRPar[i] = CreateStyledHistogram(Form("hDeltaRPar%d", i), "Delta R entre Jets y Particulas", 100, 0, 9, colors[i], i + 1, 2);
+        hDeltaRPar[i] = new TH1F(Form("hDeltaRPar%d", i), "Delta R entre los primeros 4 jets, por parejas", 50, 0, 10);
+        hDeltaRPar[i]->SetLineColor(i+1);
+        hDeltaRPar[i]->SetLineWidth(2);
     }
 }
 
@@ -164,7 +289,7 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         jets.push_back(jetVector);
     }
 
-    // Llenar vectores de partículas
+    // Llenar vectores de particulas
     for (Int_t i = 0; i < t->Particle_size; i++) {
         TLorentzVector particleVector;
         particleVector.SetPtEtaPhiM(t->Particle_PT[i], t->Particle_Eta[i], t->Particle_Phi[i], t->Particle_Mass[i]);
@@ -174,15 +299,17 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
     // Histograma de jets por evento
     hJetsPerEvent->Fill(t->Jet_size);
 
-    // Histograma de pT, Eta y Phi de los jets
-    for (int i = 0; i < std::min(4, t->Jet_size); i++) {
+
+
+    // Procesamiento detallado para cada jet
+    for (Int_t i = 0; i < std::min(4, t->Jet_size); i++) {
+
+        // Histograma de pT, Eta y Phi de los jets
         hJetPT[i]->Fill(t->Jet_PT[i]);
         hJetEta[i]->Fill(t->Jet_Eta[i]);
         hJetPhi[i]->Fill(t->Jet_Phi[i]);
-    }
 
-    // Delta R entre los primeros 4 jets, por parejas
-    for (int i = 0; i < std::min(4, t->Jet_size); i++) {
+        // Delta R entre los primeros 4 jets, por parejas
         for (int j = i + 1; j < std::min(4, t->Jet_size); j++) {
             double deltaR_par = jets[i].DeltaR(jets[j]);
             int index = i * 3 - (i * (i + 1)) / 2 + j - 1;
@@ -190,21 +317,16 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
                 hDeltaRPar[index]->Fill(deltaR_par);
             }
         }
-    }
-
-    // Histograma de Número de partículas cargadas y neutras por jet
-    for (int i = 0; i < std::min(4, t->Jet_size); i++) {
+        
+        // Histograma de Numero de particulas cargadas y neutras por jet
         hChargedParticles[i]->Fill(t->Jet_NCharged[i]);
         hNeutralsParticles[i]->Fill(t->Jet_NNeutrals[i]);
-    }
 
-    // Procesamiento detallado para cada jet
-    for (Int_t i = 0; i < std::min(4, t->Jet_size); i++) {
         // Variables del jet actual
         TLorentzVector jetVector = jets[i];
         Double_t jetPT = jetVector.Pt();
 
-        // Inicialización de variables
+        // Inicializacion de variables
         TLorentzVector chargedPTSum(0, 0, 0, 0);
         TLorentzVector neutralPTSum(0, 0, 0, 0);
         Double_t sumPT = 0.0;
@@ -217,7 +339,7 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         Double_t maxDR = -1;
         Double_t minDR = 1e9;
 
-        // Estructura para almacenar información de partículas
+        // Estructura para almacenar informacion de particulas
         struct ParticleInfo {
             TLorentzVector vector;
             Double_t deltaR;
@@ -227,20 +349,20 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
 
         std::vector<ParticleInfo> particlesInJet;
 
-        // Bucle sobre partículas para el jet actual
+        // Bucle sobre particulas para el jet actual
         for (size_t j = 0; j < particles.size(); j++) {
             const TLorentzVector& particleVector = particles[j];
             Double_t deltaR = jetVector.DeltaR(particleVector);
 
             if (deltaR < 0.4) {
-                // Almacenar información de la partícula
+                // Almacenar informacion de la particula
                 particlesInJet.push_back({particleVector, deltaR, t->Particle_Charge[j], particleVector.Pt()});
 
-                // Sumar pT y contar partículas
+                // Sumar pT y contar particulas
                 sumPT += particleVector.Pt();
                 countParticles++;
 
-                // Actualizar partículas con máximo y mínimo pT
+                // Actualizar particulas con maximo y minimo pT
                 if (particleVector.Pt() > maxPTParticle.Pt()) {
                     maxPTParticle = particleVector;
                 }
@@ -248,7 +370,7 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
                     minPTParticle = particleVector;
                 }
 
-                // Actualizar partículas con máximo y mínimo DeltaR
+                // Actualizar particulas con maximo y minimo DeltaR
                 if (deltaR > maxDR) {
                     maxDR = deltaR;
                     maxDRParticle = particleVector;
@@ -269,7 +391,7 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
 
         // Calcular fracciones de pT
         Double_t totalPT = chargedPTSum.Pt() + neutralPTSum.Pt();
-        if (totalPT == 0) totalPT = 1e-9; // Evitar división por cero
+        if (totalPT == 0) totalPT = 1e-9; // Evitar division por cero
 
         Double_t chargedPTFraction = chargedPTSum.Pt() / totalPT;
         Double_t neutralPTFraction = neutralPTSum.Pt() / totalPT;
@@ -287,7 +409,7 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
 
         Double_t ptDifference = maxPTParticle.Pt() - minPTParticle.Pt();
 
-        // Contar partículas por encima y por debajo del pT promedio
+        // Contar particulas por encima y por debajo del pT promedio
         Int_t particlesBelowAvgPT = 0;
         Int_t particlesAboveAvgPT = 0;
 
@@ -318,7 +440,7 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         // Verificar que sumPT no sea cero para evitar divisiones por cero
         if (sumPT == 0.0) continue;
 
-        // Ordenar partículas por DeltaR
+        // Ordenar particulas por DeltaR
         std::sort(particlesInJet.begin(), particlesInJet.end(), [](const ParticleInfo& a, const ParticleInfo& b) {
             return a.deltaR < b.deltaR;
         });
@@ -351,15 +473,48 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
 
         hR50PercentPT[i]->Fill(r50PercentPT);
         hR95PercentPT[i]->Fill(r95PercentPT);
+
+        // 1. pT vs Eta
+        hPT_vs_Eta[i]->Fill(t->Jet_Eta[i], t->Jet_PT[i]);
+
+        // 2. Numero de particulas cargadas vs neutras
+        hCharged_vs_NeutralParticles[i]->Fill(t->Jet_NCharged[i], t->Jet_NNeutrals[i]);
+
+        // 3. Fraccion de pT cargado vs neutro
+        hChargedPTFraction_vs_NeutralPTFraction[i]->Fill(chargedPTFraction, neutralPTFraction);
+
+        // 4. pT Promedio vs Numero Total de Particulas
+        Int_t totalParticles = t->Jet_NCharged[i] + t->Jet_NNeutrals[i];
+        hAveragePT_vs_TotalParticles[i]->Fill(totalParticles, averagePT);
+
+        /* 5. Delta R vs Diferencia en pT entre pares de jets
+        // Este histograma requiere informacion sobre los pares de jets. Puedes llenarlo dentro del bucle que calcula hDeltaRPar
+        // Por ejemplo:
+        for (int j = i + 1; j < std::min(4, t->Jet_size); j++) {
+            double deltaR_par = jets[i].DeltaR(jets[j]);
+            double ptDifference = std::abs(t->Jet_PT[i] - t->Jet_PT[j]);
+            int index = i * 3 - (i * (i + 1)) / 2 + j - 1;
+            if (index >= 0 && index < 6) {
+                hDeltaR_vs_PTDifference[index]->Fill(deltaR_par, ptDifference);
+            }
+        }*/
+
+        // 6. pT(par_max_pT) vs Delta R(par_max_pT, j_r)
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->Fill(maxPTRatio, deltaRMaxPT);
+
+        // 7. R50% vs R95%
+        hR50_vs_R95[i]->Fill(r50PercentPT, r95PercentPT);
+
     }
 }
+
 void JetAnalyzer::DrawHistograms() {
-    // Configuración general
-    gStyle->SetOptStat(0); // Desactivar la caja de estadísticas
+    // Configuracion general
+    gStyle->SetOptStat(0); // Desactivar la caja de estadisticas
 
     // Histograma de jets por evento
     TCanvas* cJets = new TCanvas("cJets", "Jets por evento", 600, 400);
-    gPad->SetLogy(); // Escala logarítmica en el eje y
+    gPad->SetLogy(); // Escala logaritmica en el eje y
     hJetsPerEvent->Draw();
     cJets->SaveAs("plots/JetsPerEvent.png");
     delete cJets;
@@ -434,7 +589,7 @@ void JetAnalyzer::DrawHistograms() {
     delete legendRPar;
     delete cRPar;
 
-    // Histograma de número de partículas cargadas por jet
+    // Histograma de numero de particulas cargadas por jet
     TCanvas* cNCharged = new TCanvas("cNCharged", "Numero de particulas cargadas por jet", 600, 400);
     gPad->SetLogy();
     hChargedParticles[0]->Draw();
@@ -451,7 +606,7 @@ void JetAnalyzer::DrawHistograms() {
     delete legendNCharged;
     delete cNCharged;
 
-    // Histograma de número de partículas neutras por jet
+    // Histograma de numero de particulas neutras por jet
     TCanvas* cNNeutrals = new TCanvas("cNNeutrals", "Numero de particulas neutras por jet", 600, 400);
     gPad->SetLogy();
     hNeutralsParticles[0]->Draw();
@@ -468,8 +623,8 @@ void JetAnalyzer::DrawHistograms() {
     delete legendNNeutrals;
     delete cNNeutrals;
 
-    // Histograma de fracción de pT cargado del jet
-    TCanvas* cChargedPTFraction = new TCanvas("cChargedPTFraction", "Fracción de pT cargado del Jet", 600, 400);
+    // Histograma de fraccion de pT cargado del jet
+    TCanvas* cChargedPTFraction = new TCanvas("cChargedPTFraction", "Fraccion de pT cargado del Jet", 600, 400);
     gPad->SetLogy();
     hChargedPTFraction[0]->Draw();
     for (int i = 1; i < 4; i++) {
@@ -485,8 +640,8 @@ void JetAnalyzer::DrawHistograms() {
     delete legendChargedPTFraction;
     delete cChargedPTFraction;
 
-    // Histograma de fracción de pT neutro del jet
-    TCanvas* cNeutralPTFraction = new TCanvas("cNeutralPTFraction", "Fracción de pT neutro del Jet", 600, 400);
+    // Histograma de fraccion de pT neutro del jet
+    TCanvas* cNeutralPTFraction = new TCanvas("cNeutralPTFraction", "Fraccion de pT neutro del Jet", 600, 400);
     gPad->SetLogy();
     hNeutralPTFraction[0]->Draw();
     for (int i = 1; i < 4; i++) {
@@ -502,7 +657,7 @@ void JetAnalyzer::DrawHistograms() {
     delete legendNeutralPTFraction;
     delete cNeutralPTFraction;
 
-    // Histograma de pT promedio de las partículas del jet
+    // Histograma de pT promedio de las particulas del jet
     TCanvas* cAveragePT = new TCanvas("cAveragePT", "pT promedio de las particulas del Jet", 600, 400);
     gPad->SetLogy();
     hAveragePT[0]->Draw();
@@ -519,8 +674,8 @@ void JetAnalyzer::DrawHistograms() {
     delete legendAveragePT;
     delete cAveragePT;
 
-    // Histograma de número de partículas con pT por debajo del promedio
-    TCanvas* cParticlesBelowAvgPT = new TCanvas("cParticlesBelowAvgPT", "Número de partículas con pT < pT promedio del Jet", 600, 400);
+    // Histograma de numero de particulas con pT por debajo del promedio
+    TCanvas* cParticlesBelowAvgPT = new TCanvas("cParticlesBelowAvgPT", "Numero de particulas con pT < pT promedio del Jet", 600, 400);
     gPad->SetLogy();
     hParticlesBelowAvgPT[0]->Draw();
     for (int i = 1; i < 4; i++) {
@@ -536,7 +691,7 @@ void JetAnalyzer::DrawHistograms() {
     delete legendParticlesBelowAvgPT;
     delete cParticlesBelowAvgPT;
 
-    // Histograma de número de partículas con pT por encima del promedio
+    // Histograma de numero de particulas con pT por encima del promedio
     TCanvas* cParticlesAboveAvgPT = new TCanvas("cParticlesAboveAvgPT", "Numero de particulas con pT > pT promedio del Jet", 600, 400);
     gPad->SetLogy();
     hParticlesAboveAvgPT[0]->Draw();
@@ -745,10 +900,10 @@ void JetAnalyzer::DrawHistograms() {
         TCanvas* cCumulativePT_vs_DeltaR = new TCanvas(Form("cCumulativePT_vs_DeltaR%d", i+1),
                                                        Form("Porcentaje acumulado de pT vs DeltaR del Jet %d", i+1),
                                                        600, 400);
-        gStyle->SetNumberContours(10); // Número de colores a utilizar
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
         hCumulativePT_vs_DeltaR[i]->GetXaxis()->SetTitle("#DeltaR");
         hCumulativePT_vs_DeltaR[i]->GetYaxis()->SetTitle("Porcentaje acumulado de pT");
-        gPad->SetLogz();
         hCumulativePT_vs_DeltaR[i]->Draw("SURF2");
         cCumulativePT_vs_DeltaR->SaveAs(Form("plots/CumulativePT_vs_DeltaR_Jet%d.png", i+1));
         hCumulativePT_vs_DeltaR[i]->Draw("CONT1");
@@ -756,8 +911,105 @@ void JetAnalyzer::DrawHistograms() {
         delete cCumulativePT_vs_DeltaR;
     }
 
+    // pT vs Eta de los jets
+    for (int i = 0; i < 4; i++) {
+        TCanvas* cPT_vs_Eta = new TCanvas(Form("cPT_vs_Eta%d", i), Form("pT vs Eta del Jet %d", i+1), 800, 600);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hPT_vs_Eta[i]->GetXaxis()->SetTitle("Eta");
+        hPT_vs_Eta[i]->GetYaxis()->SetTitle("pT (GeV)");
+        hPT_vs_Eta[i]->Draw("COLZ");
+        cPT_vs_Eta->SaveAs(Form("plots/PT_vs_Eta_Jet%d.png", i+1));
+        delete cPT_vs_Eta;
+    }
+
+    // Numero de particulas cargadas vs neutras por jet
+    for (int i = 0; i < 4; i++) {
+        TCanvas* cCharged_vs_Neutral = new TCanvas(Form("cCharged_vs_Neutral%d", i), Form("Cargadas vs Neutras del Jet %d", i+1), 800, 600);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hCharged_vs_NeutralParticles[i]->GetXaxis()->SetTitle("Numero de Particulas Cargadas");
+        hCharged_vs_NeutralParticles[i]->GetYaxis()->SetTitle("Numero de Particulas Neutras");
+        hCharged_vs_NeutralParticles[i]->Draw("COLZ");
+        cCharged_vs_Neutral->SaveAs(Form("plots/Charged_vs_Neutral_Jet%d.png", i+1));
+        hCharged_vs_NeutralParticles[i]->Draw("CONT1");
+        cCharged_vs_Neutral->SaveAs(Form("plots/CONT_Charged_vs_Neutral_Jet%d.png", i+1));
+        delete cCharged_vs_Neutral;
+    }
+
+    // Fraccion de pT cargado vs neutro
+    for (int i = 0; i < 4; i++) {
+        TCanvas* cChargedPTFraction_vs_NeutralPTFraction = new TCanvas(Form("cChargedPTFraction_vs_NeutralPTFraction%d", i),
+                                                                        Form("Fraccion de pT Cargado vs Neutro del Jet %d", i+1),
+                                                                        800, 600);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hChargedPTFraction_vs_NeutralPTFraction[i]->GetXaxis()->SetTitle("Fraccion de pT Cargado");
+        hChargedPTFraction_vs_NeutralPTFraction[i]->GetYaxis()->SetTitle("Fraccion de pT Neutro");
+        hChargedPTFraction_vs_NeutralPTFraction[i]->Draw("COLZ");
+        cChargedPTFraction_vs_NeutralPTFraction->SaveAs(Form("plots/ChargedPTFraction_vs_NeutralPTFraction_Jet%d.png", i+1));
+        delete cChargedPTFraction_vs_NeutralPTFraction;
+    }
+
+    // pT Promedio vs Numero Total de Particulas
+    for (int i = 0; i < 4; i++) {
+        TCanvas* cAveragePT_vs_TotalParticles = new TCanvas(Form("cAveragePT_vs_TotalParticles%d", i),
+                                                            Form("pT Promedio vs Total Particulas del Jet %d", i+1),
+                                                            800, 600);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hAveragePT_vs_TotalParticles[i]->GetXaxis()->SetTitle("Numero Total de Particulas");
+        hAveragePT_vs_TotalParticles[i]->GetYaxis()->SetTitle("pT Promedio (GeV)");
+        hAveragePT_vs_TotalParticles[i]->Draw("COLZ");
+        cAveragePT_vs_TotalParticles->SaveAs(Form("plots/AveragePT_vs_TotalParticles_Jet%d.png", i+1));
+        hAveragePT_vs_TotalParticles[i]->Draw("CONT1");
+        cAveragePT_vs_TotalParticles->SaveAs(Form("plots/CONT_AveragePT_vs_TotalParticles_Jet%d.png", i+1));
+        delete cAveragePT_vs_TotalParticles;
+    }
+
+    /* Delta R vs Diferencia en pT entre pares de jets
+    for (int i = 0; i < 6; i++) {
+        TCanvas* cDeltaR_vs_PTDifference = new TCanvas(Form("cDeltaR_vs_PTDifference%d", i), Form("DeltaR vs Diferencia en pT para Par %d", i+1), 800, 600);
+        hDeltaR_vs_PTDifference[i]->GetXaxis()->SetTitle("DeltaR");
+        hDeltaR_vs_PTDifference[i]->GetYaxis()->SetTitle("|pT1 - pT2| (GeV)");
+        hDeltaR_vs_PTDifference[i]->Draw("COLZ");
+        cDeltaR_vs_PTDifference->SaveAs(Form("plots/DeltaR_vs_PTDifference_Par%d.png", i+1));
+        delete cDeltaR_vs_PTDifference;
+    }*/
+
+    // pT(par_max_pT) vs Delta R(par_max_pT, j_r)
+    for (int i = 0; i < 4; i++) {
+        TCanvas* cMaxPTRatio_vs_DeltaRMaxPT = new TCanvas(Form("cMaxPTRatio_vs_DeltaRMaxPT%d", i),
+                                                        Form("pT(par_max_pT) / pT(j_r) vs DeltaR(par_max_pT, j_r) del Jet %d", i+1),
+                                                        800, 600);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->GetXaxis()->SetTitle("pT(par_{max}^{PT}) / pT(j_{r})");
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->GetYaxis()->SetTitle("DeltaR(par_{max}^{PT}, j_{r})");
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->Draw("COLZ");
+        cMaxPTRatio_vs_DeltaRMaxPT->SaveAs(Form("plots/MaxPTRatio_vs_DeltaRMaxPT_Jet%d.png", i+1));
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->Draw("CONT1");
+        cMaxPTRatio_vs_DeltaRMaxPT->SaveAs(Form("plots/CONT_MaxPTRatio_vs_DeltaRMaxPT_Jet%d.png", i+1));
+        delete cMaxPTRatio_vs_DeltaRMaxPT;
+    }
+
+    // R50% vs R95%
+    for (int i = 0; i < 4; i++) {
+        TCanvas* cR50_vs_R95 = new TCanvas(Form("cR50_vs_R95%d", i), Form("R50%% vs R95%% del Jet %d", i+1), 800, 600);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hR50_vs_R95[i]->GetXaxis()->SetTitle("R50% del pT total");
+        hR50_vs_R95[i]->GetYaxis()->SetTitle("R95% del pT total");
+        hR50_vs_R95[i]->Draw("COLZ");
+        cR50_vs_R95->SaveAs(Form("plots/R50_vs_R95_Jet%d.png", i+1));
+        hR50_vs_R95[i]->Draw("CONT1");
+        cR50_vs_R95->SaveAs(Form("plots/CONT_R50_vs_R95_Jet%d.png", i+1));
+        delete cR50_vs_R95;
+    }
+
     std::cout << "Los histogramas se han dibujado y guardado correctamente." << std::endl;
 }
+
 
 void JetAnalyzer::SaveHistograms(const std::string& outputDir) {
     // Crear directorio de salida si no existe
@@ -791,10 +1043,18 @@ void JetAnalyzer::SaveHistograms(const std::string& outputDir) {
         hR50PercentPT[i]->Write();
         hR95PercentPT[i]->Write();
         hCumulativePT_vs_DeltaR[i]->Write();
+        hPT_vs_Eta[i]->Write();
+        hCharged_vs_NeutralParticles[i]->Write();
+        hChargedPTFraction_vs_NeutralPTFraction[i]->Write();
+        hAveragePT_vs_TotalParticles[i]->Write();
+        hMaxPTRatio_vs_DeltaRMaxPT[i]->Write();
+        hR50_vs_R95[i]->Write();
+
     }
 
     for (int i = 0; i < 6; i++) {
         hDeltaRPar[i]->Write();
+        //hDeltaR_vs_PTDifference[i]->Write();
     }
 
     outFile.Close();
