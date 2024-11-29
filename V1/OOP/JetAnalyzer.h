@@ -109,6 +109,16 @@ private:
     // Histograma 2D de DeltaR vs Porcentaje acumulado de pT
     TH2F* hCumulativePT_vs_DeltaR[4];
 
+    // Nuevos Histogramas 2D
+    TH2F* hPT_vs_Eta[4]; // pT vs Eta para los primeros 4 jets
+    TH2F* hCharged_vs_NeutralParticles[4]; // Número de Partículas Cargadas vs Neutras
+    TH2F* hChargedPTFraction_vs_NeutralPTFraction[4]; // Fracción de pT Cargado vs Neutro
+    TH2F* hAveragePT_vs_TotalParticles[4]; // pT Promedio vs Número Total de Partículas
+    //TH2F* hDeltaR_vs_PTDifference[6]; // Delta R vs Diferencia en pT entre pares de jets
+    TH2F* hMaxPTRatio_vs_DeltaRMaxPT[4]; // pT(par_max_pT) vs Delta R(par_max_pT, j_r)
+    TH2F* hR50_vs_R95[4]; // R50% vs R95%
+
+
     // Vectores para almacenar jets y partículas
     std::vector<TLorentzVector> jets;
     std::vector<TLorentzVector> particles;
