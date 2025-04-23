@@ -3,10 +3,8 @@
 int main() {
     // Lista de archivos de entrada
     std::vector<std::string> inputFiles = {
-        "/home/juan27/Btagginghep/rootfiles/run_01.root",
-        "/home/juan27/Btagginghep/rootfiles/run_02.root",
-        "/home/juan27/Btagginghep/rootfiles/run_03.root",
-        "/home/juan27/Btagginghep/rootfiles/run_04.root"
+        "/home/juan/Btagginghep/rootfiles/QCD/QCD_pT_3.root"
+        //"/home/juan/Btagginghep/rootfiles/QCD/QCD_pT_8.root",
     };
 
     // Crear instancia de JetAnalyzer

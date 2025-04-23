@@ -114,6 +114,8 @@ private:
     TH2F* hCharged_vs_NeutralParticles[4]; // Número de Partículas Cargadas vs Neutras
     TH2F* hChargedPTFraction_vs_NeutralPTFraction[4]; // Fracción de pT Cargado vs Neutro
     TH2F* hAveragePT_vs_TotalParticles[4]; // pT Promedio vs Número Total de Partículas
+    TH2F* hCumulativePT_vs_DZTrack[4]; // pT acumulado vs DeltaZ del track
+    TH2F* hDeltaR_vs_DZTrack[4]; // Delta R vs DZ del track
     //TH2F* hDeltaR_vs_PTDifference[6]; // Delta R vs Diferencia en pT entre pares de jets
     TH2F* hMaxPTRatio_vs_DeltaRMaxPT[4]; // pT(par_max_pT) vs Delta R(par_max_pT, j_r)
     TH2F* hR50_vs_R95[4]; // R50% vs R95%
