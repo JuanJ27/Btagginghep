@@ -3,3 +3,6 @@
 *.tar
 venv/
 *.npy
+*.png
+*.jpg
+*.jpeg
