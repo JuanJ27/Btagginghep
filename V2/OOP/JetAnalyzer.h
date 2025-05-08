@@ -117,6 +117,10 @@ private:
     //TH2F* hDeltaR_vs_PTDifference[6]; // Delta R vs Diferencia en pT entre pares de jets
     TH2F* hMaxPTRatio_vs_DeltaRMaxPT[4]; // pT(par_max_pT) vs Delta R(par_max_pT, j_r)
     TH2F* hR50_vs_R95[4]; // R50% vs R95%
+    
+    // Nuevos histogramas relacionados con Tracks
+    TH2F* hDeltaR_vs_D0[4];          // DeltaR entre Track y Jet vs D0 del Track
+    TH2F* hCumulativePT_vs_D0[4];    // Porcentaje acumulado de pT vs D0 del Track
 
 
     // Vectores para almacenar jets y partículas

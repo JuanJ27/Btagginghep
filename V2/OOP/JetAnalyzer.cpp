@@ -175,6 +175,26 @@ void JetAnalyzer::InitializeHistograms() {
         hCumulativePT_vs_DeltaR[i]->SetLineColor(i+1);
         hCumulativePT_vs_DeltaR[i]->SetLineWidth(2);
 
+            // DeltaR vs D0
+        hDeltaR_vs_D0[i] = new TH2F(Form("hDeltaR_vs_D0_%d", i+1),
+                                    Form("DeltaR vs D0 del Track para Jet %d", i+1),
+                                    50, -5, 5,     // Eje X: D0
+                                    50, 0, 0.4);   // Eje Y: DeltaR
+        hDeltaR_vs_D0[i]->GetXaxis()->SetTitle("D_{0} (cm)");
+        hDeltaR_vs_D0[i]->GetYaxis()->SetTitle("#DeltaR(Track, Jet)");
+        hDeltaR_vs_D0[i]->SetLineColor(i+1);
+        hDeltaR_vs_D0[i]->SetLineWidth(2);
+
+        // Cumulative PT vs D0
+        hCumulativePT_vs_D0[i] = new TH2F(Form("hCumulativePT_vs_D0_%d", i+1),
+                                        Form("Cumulative pT vs D0 del Track para Jet %d", i+1),
+                                        50, -5, 5,     // Eje X: D0
+                                        50, 0, 1);     // Eje Y: % Acumulado pT
+        hCumulativePT_vs_D0[i]->GetXaxis()->SetTitle("D_{0} (cm)");
+        hCumulativePT_vs_D0[i]->GetYaxis()->SetTitle("Cumulative pT fraction");
+        hCumulativePT_vs_D0[i]->SetLineColor(i+1);
+        hCumulativePT_vs_D0[i]->SetLineWidth(2);
+
     // pT vs Eta de los jets
         hPT_vs_Eta[i] = new TH2F(Form("hPT_vs_Eta%d", i), Form("pT vs Eta del Jet %d", i+1),
                                 50, -5.5, 5.5, // Eje X: Eta
@@ -389,6 +409,31 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
             }
         }
 
+        struct TrackInfo {
+        Double_t pt;
+        Double_t d0;
+        Double_t deltaR;
+        };
+
+        std::vector<TrackInfo> tracksInJet;
+        Double_t totalTrackPT = 0.0;
+
+        for (Int_t j = 0; j < t->Track_size; j++) {
+            // Crear vector del Track
+            TLorentzVector trackVector;
+            trackVector.SetPtEtaPhiM(t->Track_PT[j], t->Track_Eta[j], t->Track_Phi[j], 0);  // Track mass ≈ 0
+
+            Double_t deltaR = jetVector.DeltaR(trackVector);
+
+            if (deltaR < 0.4) {  // Asociamos el Track al Jet si está dentro del cono
+                tracksInJet.push_back({t->Track_PT[j], t->Track_D0[j], deltaR});
+                totalTrackPT += t->Track_PT[j];
+
+                // Llenar directamente DeltaR vs D0
+                hDeltaR_vs_D0[i]->Fill(t->Track_D0[j], deltaR);
+            }
+        }
+
         // Calcular fracciones de pT
         Double_t totalPT = chargedPTSum.Pt() + neutralPTSum.Pt();
         if (totalPT == 0) totalPT = 1e-9; // Evitar division por cero
@@ -451,6 +496,19 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
             cumulativePT += pInfo.pt;
             Double_t cumulativePTFraction = cumulativePT / sumPT;
             hCumulativePT_vs_DeltaR[i]->Fill(pInfo.deltaR, cumulativePTFraction);
+        }
+
+        // Ordenar por |D0| para el acumulativo
+        std::sort(tracksInJet.begin(), tracksInJet.end(), [](const TrackInfo& a, const TrackInfo& b) {
+            return fabs(a.d0) < fabs(b.d0);
+        });
+
+        // Calcular el porcentaje acumulado de pT vs D0
+        cumulativePT = 0.0;
+        for (const auto& track : tracksInJet) {
+            cumulativePT += track.pt;
+            Double_t cumulativeFraction = cumulativePT / totalTrackPT;
+            hCumulativePT_vs_D0[i]->Fill(track.d0, cumulativeFraction);
         }
 
         // Calcular R para el 50% y 95% del pT total del jet
@@ -911,6 +969,21 @@ void JetAnalyzer::DrawHistograms() {
         delete cCumulativePT_vs_DeltaR;
     }
 
+    for (int i = 0; i < 4; i++) {
+        // DeltaR vs D0
+        TCanvas* cDeltaR_vs_D0 = new TCanvas(Form("cDeltaR_vs_D0_%d", i+1), "DeltaR vs D0", 800, 600);
+        hDeltaR_vs_D0[i]->Draw("COLZ");
+        cDeltaR_vs_D0->SaveAs(Form("plots/DeltaR_vs_D0_Jet%d.png", i+1));
+        delete cDeltaR_vs_D0;
+
+        // Cumulative PT vs D0
+        TCanvas* cCumulativePT_vs_D0 = new TCanvas(Form("cCumulativePT_vs_D0_%d", i+1), "Cumulative PT vs D0", 800, 600);
+        hCumulativePT_vs_D0[i]->Draw("COLZ");
+        cCumulativePT_vs_D0->SaveAs(Form("plots/CumulativePT_vs_D0_Jet%d.png", i+1));
+        delete cCumulativePT_vs_D0;
+    }
+
+
     // pT vs Eta de los jets
     for (int i = 0; i < 4; i++) {
         TCanvas* cPT_vs_Eta = new TCanvas(Form("cPT_vs_Eta%d", i), Form("pT vs Eta del Jet %d", i+1), 800, 600);
@@ -1043,13 +1116,14 @@ void JetAnalyzer::SaveHistograms(const std::string& outputDir) {
         hR50PercentPT[i]->Write();
         hR95PercentPT[i]->Write();
         hCumulativePT_vs_DeltaR[i]->Write();
+        hDeltaR_vs_D0[i]->Write();
+        hCumulativePT_vs_D0[i]->Write();
         hPT_vs_Eta[i]->Write();
         hCharged_vs_NeutralParticles[i]->Write();
         hChargedPTFraction_vs_NeutralPTFraction[i]->Write();
         hAveragePT_vs_TotalParticles[i]->Write();
         hMaxPTRatio_vs_DeltaRMaxPT[i]->Write();
         hR50_vs_R95[i]->Write();
-
     }
 
     for (int i = 0; i < 6; i++) {
