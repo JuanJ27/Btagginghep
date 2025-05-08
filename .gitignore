@@ -1,6 +1,5 @@
 *.root
 *.vscode
 *.tar
-*.png
-*.jpg
-*.jpeg
+venv/
+*.npy
