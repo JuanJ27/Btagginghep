@@ -118,10 +118,11 @@ private:
     TH2F* hMaxPTRatio_vs_DeltaRMaxPT[4]; // pT(par_max_pT) vs Delta R(par_max_pT, j_r)
     TH2F* hR50_vs_R95[4]; // R50% vs R95%
     
-    // Nuevos histogramas relacionados con Tracks
-    TH2F* hDeltaR_vs_D0[4];          // DeltaR entre Track y Jet vs D0 del Track
-    TH2F* hCumulativePT_vs_D0[4];    // Porcentaje acumulado de pT vs D0 del Track
-
+    // Nuevos histogramas relacionados con D0 y DZ
+    TH2F* hCumulativePT_vs_DZTrack[4];   // Porcentaje acumulado de pT vs DZ del Track
+    TH2F* hCumulativePT_vs_D0Track[4];    // Porcentaje acumulado de pT vs D0 del Track
+    TH2F* hDeltaR_vs_DZTrack[4];          // DeltaR entre Track y Jet vs DZ del Track
+    TH2F* hDeltaR_vs_D0Track[4];          // DeltaR entre Track y Jet vs D0 del Track
 
     // Vectores para almacenar jets y partículas
     std::vector<TLorentzVector> jets;

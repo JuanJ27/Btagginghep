@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <iostream>
 
 JetAnalyzer::JetAnalyzer(const std::vector<std::string>& inputFiles) {
     // Inicializar TChain y agregar archivos
@@ -45,6 +46,10 @@ JetAnalyzer::~JetAnalyzer() {
         delete hR50PercentPT[i];
         delete hR95PercentPT[i];
         delete hCumulativePT_vs_DeltaR[i];
+        delete hCumulativePT_vs_DZTrack[i];
+        delete hCumulativePT_vs_D0Track[i];
+        delete hDeltaR_vs_DZTrack[i];
+        delete hDeltaR_vs_D0Track[i];
     }
 
     for (int i = 0; i < 6; i++) {
@@ -118,7 +123,7 @@ void JetAnalyzer::InitializeHistograms() {
         hMaxPTRatio[i]->SetLineWidth(2);
 
         // pT(par_min_pT) / pT(j_r)
-        hMinPTRatio[i] = new TH1F(Form("hMinPTRatio%d", i), "pT(par_min_pT) / pT(j_r) del Jet", 100, 0, 0.15);
+        hMinPTRatio[i] = new TH1F(Form("hMinPTRatio%d", i), "pT(par_min_pT) / pT(j_r) del Jet", 100, 0, 0.2);
         hMinPTRatio[i]->SetLineColor(i+1);
         hMinPTRatio[i]->SetLineWidth(2);
 
@@ -175,27 +180,40 @@ void JetAnalyzer::InitializeHistograms() {
         hCumulativePT_vs_DeltaR[i]->SetLineColor(i+1);
         hCumulativePT_vs_DeltaR[i]->SetLineWidth(2);
 
-            // DeltaR vs D0
-        hDeltaR_vs_D0[i] = new TH2F(Form("hDeltaR_vs_D0_%d", i+1),
-                                    Form("DeltaR vs D0 del Track para Jet %d", i+1),
-                                    50, -5, 5,     // Eje X: D0
-                                    50, 0, 0.4);   // Eje Y: DeltaR
-        hDeltaR_vs_D0[i]->GetXaxis()->SetTitle("D_{0} (cm)");
-        hDeltaR_vs_D0[i]->GetYaxis()->SetTitle("#DeltaR(Track, Jet)");
-        hDeltaR_vs_D0[i]->SetLineColor(i+1);
-        hDeltaR_vs_D0[i]->SetLineWidth(2);
+        // Histograma 2D de DZTrack vs Porcentaje acumulado de pT
+        hCumulativePT_vs_DZTrack[i] = new TH2F(Form("hCumulativePT_vs_DZTrack%d", i+1),
+                                              Form("DZTrack vs Porcentaje acumulado de pT del Jet %d", i+1),
+                                              25, -4, 4,    // Eje X: DZTrack (-400 - 400)
+                                              25, 0, 1);   // Eje Y: Porcentaje acumulado de pT (0% - 100%)
+        hCumulativePT_vs_DZTrack[i]->SetLineColor(i+1);
+        hCumulativePT_vs_DZTrack[i]->SetLineWidth(2);
 
-        // Cumulative PT vs D0
-        hCumulativePT_vs_D0[i] = new TH2F(Form("hCumulativePT_vs_D0_%d", i+1),
-                                        Form("Cumulative pT vs D0 del Track para Jet %d", i+1),
-                                        50, -5, 5,     // Eje X: D0
-                                        50, 0, 1);     // Eje Y: % Acumulado pT
-        hCumulativePT_vs_D0[i]->GetXaxis()->SetTitle("D_{0} (cm)");
-        hCumulativePT_vs_D0[i]->GetYaxis()->SetTitle("Cumulative pT fraction");
-        hCumulativePT_vs_D0[i]->SetLineColor(i+1);
-        hCumulativePT_vs_D0[i]->SetLineWidth(2);
+        // Histograma 2D de D0Track vs Porcentaje acumulado de pT
+        hCumulativePT_vs_D0Track[i] = new TH2F(Form("hCumulativePT_vs_D0Track%d", i+1),
+                                        Form("D0Track vs Porcentaje acumulado de pT del Jet %d", i+1),
+                                        50, -4, 4,     // Eje X: D0
+                                        50, 0, 1);     // Eje Y: %Porcentaje acumulado de pT
+        hCumulativePT_vs_D0Track[i]->SetLineColor(i+1);
+        hCumulativePT_vs_D0Track[i]->SetLineWidth(2);
 
-    // pT vs Eta de los jets
+        // Histograma 2D de DeltaR vs DZTrack
+        hDeltaR_vs_DZTrack[i] = new TH2F(Form("hDeltaR_vs_DZTrack%d", i+1),
+                                        Form("DeltaR vs DZTrack del Jet %d", i+1),
+                                        25, -4, 4,    // Eje X: DZTrack (-400 - 400)
+                                        25, 0, 0.4);   // Eje Y: DeltaR (0 - 0.4)
+        hDeltaR_vs_DZTrack[i]->SetLineColor(i+1);
+        hDeltaR_vs_DZTrack[i]->SetLineWidth(2);
+
+        // Histograma 2D de DeltaR vs D0Track
+        hDeltaR_vs_D0Track[i] = new TH2F(Form("hDeltaR_vs_D0Track%d", i+1),
+                                    Form("DeltaR vs D0Track del Jet %d", i+1),
+                                    25, -4, 4,     // Eje X: D0
+                                    25, 0, 0.4);   // Eje Y: DeltaR
+        hDeltaR_vs_D0Track[i]->SetLineColor(i+1);
+        hDeltaR_vs_D0Track[i]->SetLineWidth(2);
+
+
+        // pT vs Eta de los jets
         hPT_vs_Eta[i] = new TH2F(Form("hPT_vs_Eta%d", i), Form("pT vs Eta del Jet %d", i+1),
                                 50, -5.5, 5.5, // Eje X: Eta
                                 50, 0, 100);   // Eje Y: pT
@@ -310,11 +328,12 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
     }
 
     // Llenar vectores de particulas
-    for (Int_t i = 0; i < t->Particle_size; i++) {
+    for (Int_t i = 0; i < t->Track_size; i++) {
         TLorentzVector particleVector;
-        particleVector.SetPtEtaPhiM(t->Particle_PT[i], t->Particle_Eta[i], t->Particle_Phi[i], t->Particle_Mass[i]);
+        particleVector.SetPtEtaPhiM(t->Track_PT[i], t->Track_Eta[i], t->Track_Phi[i], t->Track_Mass[i]);
         particles.push_back(particleVector);
     }
+
 
     // Histograma de jets por evento
     hJetsPerEvent->Fill(t->Jet_size);
@@ -327,6 +346,9 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         // Histograma de pT, Eta y Phi de los jets
         hJetPT[i]->Fill(t->Jet_PT[i]);
         hJetEta[i]->Fill(t->Jet_Eta[i]);
+        //std::cout << "Eta en hJetEta" << std::endl;
+        //std::cout << "i: " << i << std::endl;
+        //std::cout << "Eta: " << t->Jet_Eta[i] << std::endl;
         hJetPhi[i]->Fill(t->Jet_Phi[i]);
 
         // Delta R entre los primeros 4 jets, por parejas
@@ -349,6 +371,7 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         // Inicializacion de variables
         TLorentzVector chargedPTSum(0, 0, 0, 0);
         TLorentzVector neutralPTSum(0, 0, 0, 0);
+        Double_t totalPT = 0.0;
         Double_t sumPT = 0.0;
         Int_t countParticles = 0;
 
@@ -376,7 +399,7 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
 
             if (deltaR < 0.4) {
                 // Almacenar informacion de la particula
-                particlesInJet.push_back({particleVector, deltaR, t->Particle_Charge[j], particleVector.Pt()});
+                particlesInJet.push_back({particleVector, deltaR, t->Track_Charge[j], particleVector.Pt()});
 
                 // Sumar pT y contar particulas
                 sumPT += particleVector.Pt();
@@ -401,41 +424,23 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
                 }
 
                 // Sumar pT cargado y neutro
-                if (t->Particle_Charge[j] != 0) {
+                //std::cout << "Track_Charge: " << t->Track_Charge[j] << std::endl;
+                if (t->Track_Charge[j] != 0) {
+                    //std::cout << "Charged particle" << std::endl;
                     chargedPTSum += particleVector;
+                    totalPT += chargedPTSum.Pt();
+                    //std::cout << "pT: " << chargedPTSum.Pt() << std::endl;
                 } else {
+                    //std::cout << "Neutral particle" << std::endl;
                     neutralPTSum += particleVector;
+                    totalPT += neutralPTSum.Pt();
+                    //std::cout << "pT: " << neutralPTSum.Pt() << std::endl;
                 }
             }
         }
 
-        struct TrackInfo {
-        Double_t pt;
-        Double_t d0;
-        Double_t deltaR;
-        };
-
-        std::vector<TrackInfo> tracksInJet;
-        Double_t totalTrackPT = 0.0;
-
-        for (Int_t j = 0; j < t->Track_size; j++) {
-            // Crear vector del Track
-            TLorentzVector trackVector;
-            trackVector.SetPtEtaPhiM(t->Track_PT[j], t->Track_Eta[j], t->Track_Phi[j], 0);  // Track mass ≈ 0
-
-            Double_t deltaR = jetVector.DeltaR(trackVector);
-
-            if (deltaR < 0.4) {  // Asociamos el Track al Jet si está dentro del cono
-                tracksInJet.push_back({t->Track_PT[j], t->Track_D0[j], deltaR});
-                totalTrackPT += t->Track_PT[j];
-
-                // Llenar directamente DeltaR vs D0
-                hDeltaR_vs_D0[i]->Fill(t->Track_D0[j], deltaR);
-            }
-        }
-
         // Calcular fracciones de pT
-        Double_t totalPT = chargedPTSum.Pt() + neutralPTSum.Pt();
+        //std::cout << "Total pT: " << totalPT << std::endl;
         if (totalPT == 0) totalPT = 1e-9; // Evitar division por cero
 
         Double_t chargedPTFraction = chargedPTSum.Pt() / totalPT;
@@ -482,58 +487,11 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         hDeltaRMinDR[i]->Fill(deltaRMinDR);
         hPTDifference[i]->Fill(ptDifference);
 
-        // Verificar que sumPT no sea cero para evitar divisiones por cero
-        if (sumPT == 0.0) continue;
-
-        // Ordenar particulas por DeltaR
-        std::sort(particlesInJet.begin(), particlesInJet.end(), [](const ParticleInfo& a, const ParticleInfo& b) {
-            return a.deltaR < b.deltaR;
-        });
-
-        // Calcular el porcentaje acumulado de pT y llenar el histograma 2D
-        Double_t cumulativePT = 0.0;
-        for (const auto& pInfo : particlesInJet) {
-            cumulativePT += pInfo.pt;
-            Double_t cumulativePTFraction = cumulativePT / sumPT;
-            hCumulativePT_vs_DeltaR[i]->Fill(pInfo.deltaR, cumulativePTFraction);
-        }
-
-        // Ordenar por |D0| para el acumulativo
-        std::sort(tracksInJet.begin(), tracksInJet.end(), [](const TrackInfo& a, const TrackInfo& b) {
-            return fabs(a.d0) < fabs(b.d0);
-        });
-
-        // Calcular el porcentaje acumulado de pT vs D0
-        cumulativePT = 0.0;
-        for (const auto& track : tracksInJet) {
-            cumulativePT += track.pt;
-            Double_t cumulativeFraction = cumulativePT / totalTrackPT;
-            hCumulativePT_vs_D0[i]->Fill(track.d0, cumulativeFraction);
-        }
-
-        // Calcular R para el 50% y 95% del pT total del jet
-        Double_t aimPT50 = sumPT * 0.5;
-        Double_t aimPT95 = sumPT * 0.95;
-        cumulativePT = 0.0;
-        Double_t r50PercentPT = 0.0;
-        Double_t r95PercentPT = 0.0;
-
-        for (const auto& pInfo : particlesInJet) {
-            cumulativePT += pInfo.pt;
-            if (cumulativePT >= aimPT50 && r50PercentPT == 0.0) {
-                r50PercentPT = pInfo.deltaR;
-            }
-            if (cumulativePT >= aimPT95 && r95PercentPT == 0.0) {
-                r95PercentPT = pInfo.deltaR;
-                break;
-            }
-        }
-
-        hR50PercentPT[i]->Fill(r50PercentPT);
-        hR95PercentPT[i]->Fill(r95PercentPT);
-
         // 1. pT vs Eta
         hPT_vs_Eta[i]->Fill(t->Jet_Eta[i], t->Jet_PT[i]);
+        //std::cout << "Eta en hPT_vs_Eta" << std::endl;
+        //std::cout << "i: " << i << std::endl;
+        //std::cout << "Eta: " << t->Jet_Eta[i] << std::endl;
 
         // 2. Numero de particulas cargadas vs neutras
         hCharged_vs_NeutralParticles[i]->Fill(t->Jet_NCharged[i], t->Jet_NNeutrals[i]);
@@ -560,9 +518,52 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         // 6. pT(par_max_pT) vs Delta R(par_max_pT, j_r)
         hMaxPTRatio_vs_DeltaRMaxPT[i]->Fill(maxPTRatio, deltaRMaxPT);
 
+        // Verificar que sumPT no sea cero para evitar divisiones por cero
+        if (sumPT == 0.0) continue;
+
+        // Ordenar particulas por DeltaR
+        std::sort(particlesInJet.begin(), particlesInJet.end(), [](const ParticleInfo& a, const ParticleInfo& b) {
+            return a.deltaR < b.deltaR;
+        });
+
+        // Calcular el porcentaje acumulado de pT y llenar el histograma 2D
+        Double_t cumulativePT = 0.0;
+        for (const auto& pInfo : particlesInJet) {
+            cumulativePT += pInfo.pt;
+            Double_t cumulativePTFraction = cumulativePT / sumPT;
+            hCumulativePT_vs_DeltaR[i]->Fill(pInfo.deltaR, cumulativePTFraction);
+
+            // llenar el histograma 2D de DZTrack vs Porcentaje acumulado de pT
+            hCumulativePT_vs_DZTrack[i]->Fill(t->Track_DZ[0], cumulativePTFraction);
+            hCumulativePT_vs_D0Track[i]->Fill(t->Track_D0[0], cumulativePTFraction);
+            // Llenar el histograma 2D de DeltaR vs DZTrack
+            hDeltaR_vs_DZTrack[i]->Fill(t->Track_DZ[0], pInfo.deltaR);
+            hDeltaR_vs_D0Track[i]->Fill(t->Track_D0[0], pInfo.deltaR);
+        }
+
+        // Calcular R para el 50% y 95% del pT total del jet
+        Double_t aimPT50 = sumPT * 0.5;
+        Double_t aimPT95 = sumPT * 0.95;
+        cumulativePT = 0.0;
+        Double_t r50PercentPT = 0.0;
+        Double_t r95PercentPT = 0.0;
+
+        for (const auto& pInfo : particlesInJet) {
+            cumulativePT += pInfo.pt;
+            if (cumulativePT >= aimPT50 && r50PercentPT == 0.0) {
+                r50PercentPT = pInfo.deltaR;
+            }
+            if (cumulativePT >= aimPT95 && r95PercentPT == 0.0) {
+                r95PercentPT = pInfo.deltaR;
+                break;
+            }
+        }
+
+        hR50PercentPT[i]->Fill(r50PercentPT);
+        hR95PercentPT[i]->Fill(r95PercentPT);
+
         // 7. R50% vs R95%
         hR50_vs_R95[i]->Fill(r50PercentPT, r95PercentPT);
-
     }
 }
 
@@ -969,20 +970,69 @@ void JetAnalyzer::DrawHistograms() {
         delete cCumulativePT_vs_DeltaR;
     }
 
+    // Dibujar y guardar histogramas 2D de DZTrack vs Porcentaje acumulado de pT
     for (int i = 0; i < 4; i++) {
-        // DeltaR vs D0
-        TCanvas* cDeltaR_vs_D0 = new TCanvas(Form("cDeltaR_vs_D0_%d", i+1), "DeltaR vs D0", 800, 600);
-        hDeltaR_vs_D0[i]->Draw("COLZ");
-        cDeltaR_vs_D0->SaveAs(Form("plots/DeltaR_vs_D0_Jet%d.png", i+1));
-        delete cDeltaR_vs_D0;
-
-        // Cumulative PT vs D0
-        TCanvas* cCumulativePT_vs_D0 = new TCanvas(Form("cCumulativePT_vs_D0_%d", i+1), "Cumulative PT vs D0", 800, 600);
-        hCumulativePT_vs_D0[i]->Draw("COLZ");
-        cCumulativePT_vs_D0->SaveAs(Form("plots/CumulativePT_vs_D0_Jet%d.png", i+1));
-        delete cCumulativePT_vs_D0;
+        TCanvas* cCumulativePT_vs_DZTrack = new TCanvas(Form("cCumulativePT_vs_DZTrack%d", i+1),
+                                                       Form("Porcentaje acumulado de pT vs DZTrack del Jet %d", i+1),
+                                                       600, 400);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hCumulativePT_vs_DZTrack[i]->GetXaxis()->SetTitle("DZTrack");
+        hCumulativePT_vs_DZTrack[i]->GetYaxis()->SetTitle("Porcentaje acumulado de pT");
+        hCumulativePT_vs_DZTrack[i]->Draw("SURF2");
+        cCumulativePT_vs_DZTrack->SaveAs(Form("plots/CumulativePT_vs_DZTrack_Jet%d.png", i+1));
+        hCumulativePT_vs_DZTrack[i]->Draw("CONT1");
+        cCumulativePT_vs_DZTrack->SaveAs(Form("plots/CONT_CumulativePT_vs_DZTrack_Jet%d.png", i+1));
+        delete cCumulativePT_vs_DZTrack;
     }
 
+    // Dibujar y guardar histogramas 2D de D0Track vs Porcentaje acumulado de pT
+    for (int i = 0; i < 4; i++) {
+        TCanvas* cCumulativePT_vs_D0Track = new TCanvas(Form("cCumulativePT_vs_D0Track%d", i+1),
+                                                       Form("Porcentaje acumulado de pT vs D0Track del Jet %d", i+1),
+                                                       600, 400);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hCumulativePT_vs_D0Track[i]->GetXaxis()->SetTitle("D0Track");
+        hCumulativePT_vs_D0Track[i]->GetYaxis()->SetTitle("Porcentaje acumulado de pT");
+        hCumulativePT_vs_D0Track[i]->Draw("SURF2");
+        cCumulativePT_vs_D0Track->SaveAs(Form("plots/CumulativePT_vs_D0Track_Jet%d.png", i+1));
+        hCumulativePT_vs_D0Track[i]->Draw("CONT1");
+        cCumulativePT_vs_D0Track->SaveAs(Form("plots/CONT_CumulativePT_vs_D0Track_Jet%d.png", i+1));
+        delete cCumulativePT_vs_D0Track;
+    }
+
+    // Dibujar y guardar histogramas 2D de DZTrack vs DeltaR
+    for (int i = 0; i < 4; i++) {
+        TCanvas* cDeltaR_vs_DZTrack = new TCanvas(Form("chDeltaR_vs_DZTrack%d", i+1),
+                                                 Form("DeltaR vs DZTrack del Jet %d", i+1),
+                                                 600, 400);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hDeltaR_vs_DZTrack[i]->GetXaxis()->SetTitle("DZTrack");
+        hDeltaR_vs_DZTrack[i]->GetYaxis()->SetTitle("#DeltaR");
+        hDeltaR_vs_DZTrack[i]->Draw("SURF2");
+        cDeltaR_vs_DZTrack->SaveAs(Form("plots/hDeltaR_vs_DZTrack_Jet%d.png", i+1));
+        hDeltaR_vs_DZTrack[i]->Draw("CONT1");
+        cDeltaR_vs_DZTrack->SaveAs(Form("plots/CONT_hDeltaR_vs_DZTrack_Jet%d.png", i+1));
+        delete cDeltaR_vs_DZTrack;
+    }
+
+        // Dibujar y guardar histogramas 2D de D0Track vs DeltaR
+    for (int i = 0; i < 4; i++) {
+        TCanvas* cDeltaR_vs_D0Track = new TCanvas(Form("chDeltaR_vs_D0Track%d", i+1),
+                                                 Form("DeltaR vs D0Track del Jet %d", i+1),
+                                                 600, 400);
+        gStyle->SetNumberContours(10); // Numero de colores a utilizar
+        gPad->SetLogz(); // Escala logaritmica en el eje z
+        hDeltaR_vs_D0Track[i]->GetXaxis()->SetTitle("D0Track");
+        hDeltaR_vs_D0Track[i]->GetYaxis()->SetTitle("#DeltaR");
+        hDeltaR_vs_D0Track[i]->Draw("SURF2");
+        cDeltaR_vs_D0Track->SaveAs(Form("plots/hDeltaR_vs_D0Track_Jet%d.png", i+1));
+        hDeltaR_vs_D0Track[i]->Draw("CONT1");
+        cDeltaR_vs_D0Track->SaveAs(Form("plots/CONT_hDeltaR_vs_D0Track_Jet%d.png", i+1));
+        delete cDeltaR_vs_D0Track;
+    }
 
     // pT vs Eta de los jets
     for (int i = 0; i < 4; i++) {
@@ -1083,7 +1133,6 @@ void JetAnalyzer::DrawHistograms() {
     std::cout << "Los histogramas se han dibujado y guardado correctamente." << std::endl;
 }
 
-
 void JetAnalyzer::SaveHistograms(const std::string& outputDir) {
     // Crear directorio de salida si no existe
     std::string command = "mkdir -p " + outputDir;
@@ -1116,14 +1165,17 @@ void JetAnalyzer::SaveHistograms(const std::string& outputDir) {
         hR50PercentPT[i]->Write();
         hR95PercentPT[i]->Write();
         hCumulativePT_vs_DeltaR[i]->Write();
-        hDeltaR_vs_D0[i]->Write();
-        hCumulativePT_vs_D0[i]->Write();
+        hCumulativePT_vs_DZTrack[i]->Write();
+        hCumulativePT_vs_D0Track[i]->Write();
+        hDeltaR_vs_DZTrack[i]->Write();
+        hDeltaR_vs_D0Track[i]->Write();
         hPT_vs_Eta[i]->Write();
         hCharged_vs_NeutralParticles[i]->Write();
         hChargedPTFraction_vs_NeutralPTFraction[i]->Write();
         hAveragePT_vs_TotalParticles[i]->Write();
         hMaxPTRatio_vs_DeltaRMaxPT[i]->Write();
         hR50_vs_R95[i]->Write();
+
     }
 
     for (int i = 0; i < 6; i++) {
