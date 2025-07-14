@@ -123,7 +123,7 @@ void JetAnalyzer::InitializeHistograms() {
         hMaxPTRatio[i]->SetLineWidth(2);
 
         // pT(par_min_pT) / pT(j_r)
-        hMinPTRatio[i] = new TH1F(Form("hMinPTRatio%d", i), "pT(par_min_pT) / pT(j_r) del Jet", 100, 0, 0.2);
+        hMinPTRatio[i] = new TH1F(Form("hMinPTRatio%d", i), "pT(par_min_pT) / pT(j_r) del Jet", 100, 0, 1);
         hMinPTRatio[i]->SetLineColor(i+1);
         hMinPTRatio[i]->SetLineWidth(2);
 
@@ -334,11 +334,8 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         particles.push_back(particleVector);
     }
 
-
     // Histograma de jets por evento
     hJetsPerEvent->Fill(t->Jet_size);
-
-
 
     // Procesamiento detallado para cada jet
     for (Int_t i = 0; i < std::min(4, t->Jet_size); i++) {
@@ -346,9 +343,6 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         // Histograma de pT, Eta y Phi de los jets
         hJetPT[i]->Fill(t->Jet_PT[i]);
         hJetEta[i]->Fill(t->Jet_Eta[i]);
-        //std::cout << "Eta en hJetEta" << std::endl;
-        //std::cout << "i: " << i << std::endl;
-        //std::cout << "Eta: " << t->Jet_Eta[i] << std::endl;
         hJetPhi[i]->Fill(t->Jet_Phi[i]);
 
         // Delta R entre los primeros 4 jets, por parejas
@@ -424,23 +418,17 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
                 }
 
                 // Sumar pT cargado y neutro
-                //std::cout << "Track_Charge: " << t->Track_Charge[j] << std::endl;
                 if (t->Track_Charge[j] != 0) {
-                    //std::cout << "Charged particle" << std::endl;
                     chargedPTSum += particleVector;
                     totalPT += chargedPTSum.Pt();
-                    //std::cout << "pT: " << chargedPTSum.Pt() << std::endl;
                 } else {
-                    //std::cout << "Neutral particle" << std::endl;
                     neutralPTSum += particleVector;
                     totalPT += neutralPTSum.Pt();
-                    //std::cout << "pT: " << neutralPTSum.Pt() << std::endl;
                 }
             }
         }
 
         // Calcular fracciones de pT
-        //std::cout << "Total pT: " << totalPT << std::endl;
         if (totalPT == 0) totalPT = 1e-9; // Evitar division por cero
 
         Double_t chargedPTFraction = chargedPTSum.Pt() / totalPT;
@@ -490,8 +478,6 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         // 1. pT vs Eta
         hPT_vs_Eta[i]->Fill(t->Jet_Eta[i], t->Jet_PT[i]);
         //std::cout << "Eta en hPT_vs_Eta" << std::endl;
-        //std::cout << "i: " << i << std::endl;
-        //std::cout << "Eta: " << t->Jet_Eta[i] << std::endl;
 
         // 2. Numero de particulas cargadas vs neutras
         hCharged_vs_NeutralParticles[i]->Fill(t->Jet_NCharged[i], t->Jet_NNeutrals[i]);
