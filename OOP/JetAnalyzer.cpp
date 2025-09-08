@@ -428,11 +428,6 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
             }
         }
 
-        // Calcular fracciones de pT
-        if (totalPT == 0) totalPT = 1e-9; // Evitar division por cero
-
-        Double_t chargedPTFraction = chargedPTSum.Pt() / totalPT;
-        Double_t neutralPTFraction = neutralPTSum.Pt() / totalPT;
         Double_t averagePT = (countParticles > 0) ? (sumPT / countParticles) : 0;
 
         Double_t maxPTRatio = (jetPT > 0) ? (maxPTParticle.Pt() / jetPT) : 0;
@@ -460,8 +455,6 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         }
 
         // Llenar histogramas
-        hChargedPTFraction[i]->Fill(chargedPTFraction);
-        hNeutralPTFraction[i]->Fill(neutralPTFraction);
         hAveragePT[i]->Fill(averagePT);
         hParticlesBelowAvgPT[i]->Fill(particlesBelowAvgPT);
         hParticlesAboveAvgPT[i]->Fill(particlesAboveAvgPT);
@@ -483,7 +476,6 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
         hCharged_vs_NeutralParticles[i]->Fill(t->Jet_NCharged[i], t->Jet_NNeutrals[i]);
 
         // 3. Fraccion de pT cargado vs neutro
-        hChargedPTFraction_vs_NeutralPTFraction[i]->Fill(chargedPTFraction, neutralPTFraction);
 
         // 4. pT Promedio vs Numero Total de Particulas
         Int_t totalParticles = t->Jet_NCharged[i] + t->Jet_NNeutrals[i];
@@ -550,6 +542,16 @@ void JetAnalyzer::ProcessEvent(Long64_t entry) {
 
         // 7. R50% vs R95%
         hR50_vs_R95[i]->Fill(r50PercentPT, r95PercentPT);
+
+        // Calcular fracciones de pT
+        if (totalPT == 0) continue; // Evitar division por cero
+
+        Double_t chargedPTFraction = chargedPTSum.Pt() / totalPT;
+        Double_t neutralPTFraction = neutralPTSum.Pt() / totalPT;
+
+        hChargedPTFraction[i]->Fill(chargedPTFraction);
+        hNeutralPTFraction[i]->Fill(neutralPTFraction);
+        hChargedPTFraction_vs_NeutralPTFraction[i]->Fill(chargedPTFraction, neutralPTFraction);
     }
 }
 
