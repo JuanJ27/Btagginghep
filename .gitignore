@@ -10,3 +10,5 @@ venv/
 *.parquet
 *.json
 *.pdf
+*.atl
+/openspec/*
