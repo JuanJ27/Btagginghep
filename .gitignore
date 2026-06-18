@@ -7,4 +7,6 @@ venv/
 *.jpg
 *.jpeg
 *.txt
+*.parquet
+*.json
 *.pdf
