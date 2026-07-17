@@ -1,26 +1,28 @@
 from __future__ import annotations
 
 import json
+import argparse
 from pathlib import Path
 
-import awkward as ak
 import numpy as np
 import pandas as pd
-import uproot
 from sklearn.model_selection import train_test_split
+
+try:
+    import awkward as ak
+    import uproot
+except ModuleNotFoundError:
+    ak = None
+    uproot = None
 
 
 # ============================================================
 # Configuration
 # ============================================================
 
-# Change this if needed
-# Example 1: Path("../data")
-# Example 2: Path("../rootfiles")
-DATA_DIR = Path("../data")
-
-OUTPUT_DIR = Path("../outputs")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+DEFAULT_DATA_DIR = Path("../data")
+DEFAULT_OUTPUT_DIR = Path("../outputs")
+SOURCE_PROFILES_PATH = Path(__file__).with_name("source_profiles.json")
 
 # If you want CSV instead of parquet, change to "csv"
 SAVE_FORMAT = "parquet"   # "parquet" or "csv"
@@ -34,6 +36,7 @@ SAMPLE_MAP = {
 
 BRANCHES = [
     "Jet.PT",
+    "Jet.Flavor",
     "Jet.Eta",
     "Jet.Phi",
     "Jet.Mass",
@@ -51,11 +54,35 @@ BRANCHES = [
 JET_CONE = 0.4
 MAX_JETS_PER_EVENT = 4
 SEED = 42
+SPLIT_RATIOS = {"train": 0.70, "val": 0.15, "test": 0.15}
+PT_REGIONS = {
+    "all": ("all jet pT values", lambda jet_pt: True),
+    "lt20": ("jet_pt < 20", lambda jet_pt: jet_pt < 20),
+    "gt20": ("jet_pt > 20", lambda jet_pt: jet_pt > 20),
+}
+LABEL_SOURCES = ("sample", "jet_flavor")
+JET_FLAVOR_MAPPING = {
+    "abs(flavor) == 5": "b",
+    "abs(flavor) == 4": "c",
+    "abs(flavor) in {1, 2, 3}": "uds",
+    "flavor == 21": "g",
+}
 
 
 # ============================================================
 # Small helpers
 # ============================================================
+
+class SourceProfileError(RuntimeError):
+    """Raised when a reproducible source profile cannot be used."""
+
+
+def load_source_profiles(path: Path = SOURCE_PROFILES_PATH) -> tuple[str, dict[str, dict]]:
+    with path.open() as profile_file:
+        config = json.load(profile_file)
+    if config.get("version") != 1 or not isinstance(config.get("profiles"), dict):
+        raise SourceProfileError(f"Unsupported source profile configuration: {path}")
+    return config["default_profile"], config["profiles"]
 
 def delta_phi(phi1: np.ndarray, phi2: float) -> np.ndarray:
     dphi = phi1 - phi2
@@ -258,8 +285,126 @@ def collect_all_files(data_dir: Path) -> list[tuple[Path, str]]:
     return items
 
 
-def process_one_file(root_file: Path, sample_label: str) -> pd.DataFrame:
+def select_source_files(data_dir: Path, profile_name: str, profiles: dict[str, dict]) -> tuple[dict, list[tuple[Path, str]]]:
+    if profile_name not in profiles:
+        raise SourceProfileError(f"Unknown source profile '{profile_name}'. Available profiles: {', '.join(sorted(profiles))}.")
+    profile = profiles[profile_name]
+    if profile.get("discover_all"):
+        return profile, collect_all_files(data_dir)
+
+    items = []
+    for folder, filenames in profile.get("files", {}).items():
+        if folder not in SAMPLE_MAP:
+            raise SourceProfileError(f"Source profile '{profile_name}' names unknown sample folder '{folder}'.")
+        for filename in filenames:
+            root_file = data_dir / folder / filename
+            if not root_file.is_file():
+                raise SourceProfileError(f"Source profile '{profile_name}' expected file is missing: {root_file}")
+            items.append((root_file, SAMPLE_MAP[folder]))
+    return profile, items
+
+
+def preflight_inputs(items: list[tuple[Path, str]], profile_name: str, profile: dict) -> tuple[list[tuple[Path, str]], dict]:
+    if uproot is None:
+        raise RuntimeError("ROOT preflight requires the uproot package.")
+
+    valid_items = []
+    audit = {"source_profile": profile_name, "source_profile_description": profile["description"], "valid_files": [], "invalid_files": []}
+    for root_file, label in items:
+        record = {"file": str(root_file.resolve()), "label": label}
+        try:
+            with uproot.open(root_file) as source:
+                if "Delphes" not in source:
+                    raise ValueError("missing Delphes tree")
+                tree = source["Delphes"]
+                if tree.num_entries == 0:
+                    raise ValueError("Delphes tree has no entries")
+                missing = [branch for branch in BRANCHES if branch not in tree]
+                if missing:
+                    raise ValueError(f"missing required branches: {', '.join(missing)}")
+        except Exception as error:
+            record["reason"] = str(error)
+            audit["invalid_files"].append(record)
+            if profile.get("discover_all"):
+                print(f"WARNING: skipping invalid ROOT input {root_file}: {record['reason']}")
+        else:
+            valid_items.append((root_file, label))
+            audit["valid_files"].append(record)
+    audit["selected_file_count"] = len(items)
+    audit["valid_file_count"] = len(valid_items)
+    audit["invalid_file_count"] = len(audit["invalid_files"])
+    return valid_items, audit
+
+
+def write_audit_summary(audit: dict, output_dir: Path) -> Path:
+    audit_path = output_dir / "input_audit.json"
+    with audit_path.open("w") as audit_file:
+        json.dump(audit, audit_file, indent=2)
+    print(f"Input preflight: {audit['valid_file_count']} valid, {audit['invalid_file_count']} invalid")
+    print(" -", audit_path)
+    return audit_path
+
+
+def passes_pt_region(jet_pt: float, pt_region: str) -> bool:
+    return PT_REGIONS[pt_region][1](jet_pt)
+
+
+def map_jet_flavor(flavor: float) -> tuple[str | None, str]:
+    """Map the Delphes Jet.Flavor PDG-like parton code without coercion."""
+    if not np.isfinite(flavor):
+        return None, "non_finite"
+    if flavor == 0:
+        return None, "zero"
+    if abs(flavor) == 5:
+        return "b", "matched"
+    if abs(flavor) == 4:
+        return "c", "matched"
+    if abs(flavor) in {1, 2, 3}:
+        return "uds", "matched"
+    if flavor == 21:
+        return "g", "matched"
+    return None, "unsupported"
+
+
+def raw_flavor_key(flavor: float) -> str:
+    if not np.isfinite(flavor):
+        return str(flavor).lower()
+    return str(int(flavor)) if flavor.is_integer() else str(flavor)
+
+
+def derive_jet_labels(source_sample_label: str, jet_flavor: float, label_source: str) -> dict | None:
+    truth_label, _ = map_jet_flavor(jet_flavor)
+    if label_source == "jet_flavor" and truth_label is None:
+        return None
+    sample_label = source_sample_label if label_source == "sample" else truth_label
+    return {
+        "source_sample_label": source_sample_label,
+        "sample_label": sample_label,
+        "is_b": int(sample_label == "b"),
+        "jet_flavor": jet_flavor,
+    }
+
+
+def empty_truth_summary() -> dict:
+    return {"matched_jets": 0, "unmatched_jets": 0, "unmatched_by_reason_and_raw_flavor": {}}
+
+
+def record_truth_label(summary: dict, jet_flavor: float) -> None:
+    _, reason = map_jet_flavor(jet_flavor)
+    if reason == "matched":
+        summary["matched_jets"] += 1
+        return
+    summary["unmatched_jets"] += 1
+    counts = summary["unmatched_by_reason_and_raw_flavor"].setdefault(reason, {})
+    raw_value = raw_flavor_key(jet_flavor)
+    counts[raw_value] = counts.get(raw_value, 0) + 1
+
+
+def process_one_file(root_file: Path, source_sample_label: str, pt_region: str, label_source: str) -> tuple[pd.DataFrame, dict]:
+    if ak is None or uproot is None:
+        raise RuntimeError("ROOT processing requires the awkward and uproot packages.")
     rows = []
+    truth_summary = empty_truth_summary()
     event_counter = 0
 
     for batch in uproot.iterate(f"{root_file}:Delphes", BRANCHES, step_size="100 MB", library="ak"):
@@ -267,6 +412,7 @@ def process_one_file(root_file: Path, sample_label: str) -> pd.DataFrame:
 
         for ievt in range(n_events):
             jet_pt = np.asarray(ak.to_numpy(batch["Jet.PT"][ievt]), dtype=np.float32)
+            jet_flavor = np.asarray(ak.to_numpy(batch["Jet.Flavor"][ievt]), dtype=np.float64)
             jet_eta = np.asarray(ak.to_numpy(batch["Jet.Eta"][ievt]), dtype=np.float32)
             jet_phi = np.asarray(ak.to_numpy(batch["Jet.Phi"][ievt]), dtype=np.float32)
             jet_mass = np.asarray(ak.to_numpy(batch["Jet.Mass"][ievt]), dtype=np.float32)
@@ -282,6 +428,13 @@ def process_one_file(root_file: Path, sample_label: str) -> pd.DataFrame:
             n_jets = min(len(jet_pt), MAX_JETS_PER_EVENT)
 
             for j in range(n_jets):
+                if not passes_pt_region(float(jet_pt[j]), pt_region):
+                    continue
+                flavor = float(jet_flavor[j])
+                record_truth_label(truth_summary, flavor)
+                labels = derive_jet_labels(source_sample_label, flavor, label_source)
+                if labels is None:
+                    continue
                 feats = compute_jet_features(
                     jet_pt=float(jet_pt[j]),
                     jet_eta=float(jet_eta[j]),
@@ -296,8 +449,7 @@ def process_one_file(root_file: Path, sample_label: str) -> pd.DataFrame:
                     trk_dz=trk_dz,
                 )
 
-                feats["sample_label"] = sample_label
-                feats["is_b"] = 1 if sample_label == "b" else 0
+                feats.update(labels)
                 feats["root_file"] = str(root_file)
                 feats["event_in_file"] = event_counter
                 feats["jet_rank"] = j
@@ -306,30 +458,66 @@ def process_one_file(root_file: Path, sample_label: str) -> pd.DataFrame:
 
             event_counter += 1
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), truth_summary
 
 
 # ============================================================
 # Splitting
 # ============================================================
 
-def split_by_event(full_df: pd.DataFrame):
-    event_df = full_df[["global_event_id", "sample_label"]].drop_duplicates().reset_index(drop=True)
+class InsufficientEventsForSplitError(ValueError):
+    """Raised when an event-grouped stratified split cannot retain every label."""
+
+
+class TruthSourceCoverageError(RuntimeError):
+    """Raised when a selected source stratum has no matched truth jets."""
+
+
+def validate_split_ratios(ratios: dict[str, float]) -> dict[str, float]:
+    required = {"train", "val", "test"}
+    if set(ratios) != required:
+        raise ValueError(f"Split ratios must define exactly {sorted(required)}.")
+    if any(ratio <= 0 for ratio in ratios.values()):
+        raise ValueError("All split ratios must be positive.")
+    if not np.isclose(sum(ratios.values()), 1.0):
+        raise ValueError("Split ratios must sum to 1.")
+    return {name: float(ratios[name]) for name in ("train", "val", "test")}
+
+
+def validate_event_split_preflight(event_df: pd.DataFrame, ratios: dict[str, float], stratum_column: str, stratum_name: str) -> None:
+    """Ensure each label can appear in every stratified split after grouping."""
+    minimum_events = max(int(np.ceil(2 / ratio)) for ratio in ratios.values())
+    counts = event_df[stratum_column].value_counts().sort_index()
+    deficient = {label: int(count) for label, count in counts.items() if count < minimum_events}
+    if deficient:
+        details = ", ".join(f"{label}={count}" for label, count in deficient.items())
+        raise InsufficientEventsForSplitError(
+            f"Insufficient unique events per {stratum_name} for the configured "
+            f"event-grouped train/validation/test split (need at least {minimum_events} each): {details}."
+        )
+
+
+def split_by_event(full_df: pd.DataFrame, ratios: dict[str, float] = SPLIT_RATIOS, stratum_column: str = "sample_label"):
+    ratios = validate_split_ratios(ratios)
+    event_df = full_df[["global_event_id", stratum_column]].drop_duplicates().reset_index(drop=True)
+    stratum_name = "sample label" if stratum_column == "sample_label" else stratum_column.replace("_", " ")
+    validate_event_split_preflight(event_df, ratios, stratum_column, stratum_name)
+    temporary_ratio = ratios["val"] + ratios["test"]
 
     # First split: train vs temp
     train_events, temp_events = train_test_split(
         event_df,
-        test_size=0.30,
+        test_size=temporary_ratio,
         random_state=SEED,
-        stratify=event_df["sample_label"],
+        stratify=event_df[stratum_column],
     )
 
     # Second split: val vs test
     val_events, test_events = train_test_split(
         temp_events,
-        test_size=0.50,
+        test_size=ratios["test"] / temporary_ratio,
         random_state=SEED,
-        stratify=temp_events["sample_label"],
+        stratify=temp_events[stratum_column],
     )
 
     train_df = full_df[full_df["global_event_id"].isin(train_events["global_event_id"])].copy()
@@ -343,27 +531,136 @@ def split_by_event(full_df: pd.DataFrame):
 # Main
 # ============================================================
 
-def main():
-    items = collect_all_files(DATA_DIR)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build event-grouped b-tagging datasets from Delphes ROOT files.")
+    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR, help="Directory containing QCD sample folders.")
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory for dataset files and manifest.")
+    default_profile, profiles = load_source_profiles()
+    parser.add_argument("--source-profile", choices=sorted(profiles), default=default_profile, help="Input provenance profile; independent from --pt-region. Default: discover_all.")
+    parser.add_argument("--pt-region", choices=PT_REGIONS, default="all", help="Jet pT selection: all, lt20 (< 20), or gt20 (> 20).")
+    parser.add_argument("--label-source", choices=LABEL_SOURCES, default="sample", help="Target label source: sample (folder provenance) or jet_flavor (Delphes Jet.Flavor truth).")
+    parser.add_argument("--audit-only", action="store_true", help="Validate selected ROOT inputs, write input_audit.json, and exit before jet processing.")
+    return parser.parse_args()
 
+
+def class_counts(df: pd.DataFrame) -> dict[str, int]:
+    return {label: int(count) for label, count in df["sample_label"].value_counts().sort_index().items()}
+
+
+def source_target_contingency(df: pd.DataFrame) -> dict[str, dict[str, int]]:
+    table = pd.crosstab(df["source_sample_label"], df["sample_label"])
+    return {source: {target: int(count) for target, count in row.items() if count} for source, row in table.to_dict(orient="index").items()}
+
+
+def validate_binary_targets(df: pd.DataFrame, label_source: str) -> None:
+    present_labels = set(df["sample_label"]) if not df.empty else set()
+    missing = []
+    if "b" not in present_labels:
+        missing.append("b")
+    if not (present_labels - {"b"}):
+        missing.append("non-b")
+    if missing:
+        prefix = "Truth filtering left no" if label_source == "jet_flavor" else "Dataset contains no"
+        raise RuntimeError(f"{prefix} required target jets: {', '.join(missing)}.")
+
+
+def validate_truth_source_coverage(audit: dict, df: pd.DataFrame) -> None:
+    expected_sources = {record["label"] for record in audit["valid_files"]}
+    matched_sources = set(df["source_sample_label"])
+    missing_sources = sorted(expected_sources - matched_sources)
+    if missing_sources:
+        raise TruthSourceCoverageError(
+            "Selected source strata have zero matched truth jets: "
+            f"{', '.join(missing_sources)}."
+        )
+
+
+def run(args: argparse.Namespace) -> None:
+    data_dir = args.data_dir.resolve()
+    output_dir = args.output_dir.resolve()
+    label_source = getattr(args, "label_source", "sample")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _, profiles = load_source_profiles()
+    profile = profiles.get(args.source_profile)
+    selected_items = []
+    try:
+        profile, selected_items = select_source_files(data_dir, args.source_profile, profiles)
+        items, audit = preflight_inputs(selected_items, args.source_profile, profile)
+    except Exception as error:
+        selected_files = [{"file": str(root_file.resolve()), "label": label} for root_file, label in selected_items]
+        missing_files = []
+        if profile and not profile.get("discover_all"):
+            for folder, filenames in profile.get("files", {}).items():
+                for filename in filenames:
+                    root_file = data_dir / folder / filename
+                    if not root_file.is_file():
+                        missing_files.append({"file": str(root_file.resolve()), "label": SAMPLE_MAP.get(folder), "reason": str(error)})
+        audit = {
+            "source_profile": args.source_profile,
+            "source_profile_description": profile.get("description") if profile else None,
+            "selected_files": selected_files,
+            "missing_files": missing_files,
+            "valid_files": [],
+            "invalid_files": missing_files,
+            "selected_file_count": len(selected_files) + len(missing_files),
+            "valid_file_count": 0,
+            "invalid_file_count": len(missing_files),
+            "status": "failed",
+            "error": {"type": type(error).__name__, "message": str(error)},
+        }
+        write_audit_summary(audit, output_dir)
+        raise
+    strict_error = None
+    if audit["invalid_file_count"] and not profile.get("discover_all"):
+        first_invalid = audit["invalid_files"][0]
+        strict_error = (
+            f"Source profile '{args.source_profile}' has invalid file "
+            f"{first_invalid['file']}: {first_invalid['reason']}"
+        )
+        audit["status"] = "failed"
+        audit["error"] = {"type": "SourceProfileError", "message": strict_error}
+    else:
+        audit["status"] = "success"
+        audit["error"] = None
+    write_audit_summary(audit, output_dir)
+
+    if strict_error:
+        raise SourceProfileError(strict_error)
+    if args.audit_only:
+        return
     if len(items) == 0:
-        raise RuntimeError(f"No ROOT files found under {DATA_DIR}")
+        raise RuntimeError(f"No valid ROOT files found under {data_dir} for source profile '{args.source_profile}'.")
 
     all_dfs = []
+    truth_summary = empty_truth_summary()
 
     for root_file, label in items:
         print(f"Processing {root_file.name} as {label}")
-        df = process_one_file(root_file, label)
+        df, file_truth_summary = process_one_file(root_file, label, args.pt_region, label_source)
+        truth_summary["matched_jets"] += file_truth_summary["matched_jets"]
+        truth_summary["unmatched_jets"] += file_truth_summary["unmatched_jets"]
+        for reason, raw_counts in file_truth_summary["unmatched_by_reason_and_raw_flavor"].items():
+            counts = truth_summary["unmatched_by_reason_and_raw_flavor"].setdefault(reason, {})
+            for raw_value, count in raw_counts.items():
+                counts[raw_value] = counts.get(raw_value, 0) + count
         print(f"  -> {len(df)} jets")
         all_dfs.append(df)
 
     full_df = pd.concat(all_dfs, ignore_index=True)
 
+    if full_df.empty and label_source == "sample":
+        raise RuntimeError(f"No jets passed pT region '{args.pt_region}' ({PT_REGIONS[args.pt_region][0]}).")
+    if label_source == "jet_flavor":
+        validate_truth_source_coverage(audit, full_df)
+    validate_binary_targets(full_df, label_source)
+
     print("\nTotal jets in full dataset:", len(full_df))
     print("\nJets per class:")
     print(full_df["sample_label"].value_counts())
 
-    train_df, val_df, test_df, train_events, val_events, test_events = split_by_event(full_df)
+    split_ratios = validate_split_ratios(SPLIT_RATIOS)
+    split_stratum = "source_sample_label" if label_source == "jet_flavor" else "sample_label"
+    train_df, val_df, test_df, train_events, val_events, test_events = split_by_event(full_df, split_ratios, split_stratum)
 
     print("\nSplit summary:")
     print(f"Train jets: {len(train_df)}")
@@ -379,18 +676,58 @@ def main():
     print("\nTest class counts:")
     print(test_df["sample_label"].value_counts())
 
-    train_path = save_dataframe(train_df, OUTPUT_DIR / "train")
-    val_path = save_dataframe(val_df, OUTPUT_DIR / "val")
-    test_path = save_dataframe(test_df, OUTPUT_DIR / "test")
+    train_path = save_dataframe(train_df, output_dir / "train")
+    val_path = save_dataframe(val_df, output_dir / "val")
+    test_path = save_dataframe(test_df, output_dir / "test")
+
+    source_inventory = [str(root_file.resolve()) for root_file, _ in items]
+    metadata_columns = ["source_sample_label", "sample_label", "is_b", "jet_flavor", "root_file", "event_in_file", "jet_rank", "global_event_id"]
+    feature_columns = [column for column in full_df.columns if column not in metadata_columns]
 
     manifest = {
-        "data_dir": str(DATA_DIR),
-        "output_dir": str(OUTPUT_DIR),
+        "data_dir": str(data_dir),
+        "output_dir": str(output_dir),
         "save_format": SAVE_FORMAT,
-        "seed": SEED,
-        "jet_cone": JET_CONE,
-        "max_jets_per_event": MAX_JETS_PER_EVENT,
-        "files": [{"file": str(f), "label": label} for f, label in items],
+        "source_profile": args.source_profile,
+        "source_profile_description": profile["description"],
+        "pt_region": args.pt_region,
+        "pt_expression": PT_REGIONS[args.pt_region][0],
+        "label_source": {
+            "version": 1,
+            "selected": label_source,
+            "jet_flavor_mapping": JET_FLAVOR_MAPPING,
+            "truth_summary": truth_summary,
+        },
+        "source_root_inventory": source_inventory,
+        "input_audit": audit,
+        "files": [{"file": str(f.resolve()), "label": label} for f, label in items],
+        "generator_settings": {
+            "seed": SEED,
+            "jet_cone": JET_CONE,
+            "max_jets_per_event": MAX_JETS_PER_EVENT,
+            "branches": BRANCHES,
+        },
+        "split": {
+            "method": "event_grouped_stratified",
+            "stratification_basis": split_stratum,
+            "seed": SEED,
+            "ratios": split_ratios,
+            "applied_event_ratios": {
+                "train": len(train_events) / len(full_df[["global_event_id"]].drop_duplicates()),
+                "val": len(val_events) / len(full_df[["global_event_id"]].drop_duplicates()),
+                "test": len(test_events) / len(full_df[["global_event_id"]].drop_duplicates()),
+            },
+        },
+        "schema": {"columns": full_df.columns.tolist(), "feature_columns": feature_columns, "metadata_columns": metadata_columns},
+        "sample_counts": {"full": class_counts(full_df), "train": class_counts(train_df), "val": class_counts(val_df), "test": class_counts(test_df)},
+        "target_class_counts_by_split": {"full": class_counts(full_df), "train": class_counts(train_df), "val": class_counts(val_df), "test": class_counts(test_df)},
+        "source_target_contingency": source_target_contingency(full_df),
+        "binary_class_counts": {
+            "full": {str(key): int(value) for key, value in full_df["is_b"].value_counts().sort_index().items()},
+            "train": {str(key): int(value) for key, value in train_df["is_b"].value_counts().sort_index().items()},
+            "val": {str(key): int(value) for key, value in val_df["is_b"].value_counts().sort_index().items()},
+            "test": {str(key): int(value) for key, value in test_df["is_b"].value_counts().sort_index().items()},
+        },
         "n_full_jets": int(len(full_df)),
         "n_train_jets": int(len(train_df)),
         "n_val_jets": int(len(val_df)),
@@ -403,15 +740,19 @@ def main():
         "test_output": str(test_path),
     }
 
-    with open(OUTPUT_DIR / "dataset_manifest.json", "w") as f:
+    with open(output_dir / "dataset_manifest.json", "w") as f:
         json.dump(manifest, f, indent=2)
 
     print("\nSaved:")
     print(" -", train_path)
     print(" -", val_path)
     print(" -", test_path)
-    print(" -", OUTPUT_DIR / "dataset_manifest.json")
+    print(" -", output_dir / "dataset_manifest.json")
     print("\nDone.")
+
+
+def main():
+    run(parse_args())
 
 
 if __name__ == "__main__":
