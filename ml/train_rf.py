@@ -14,6 +14,8 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score, roc_curve
 
+from ml.evaluation import evaluate_working_points, plot_working_point_report, select_working_points
+
 
 DEFAULT_DATASET_DIR = Path(__file__).resolve().parents[1] / "outputs"
 METADATA_COLUMNS = {"global_event_id", "source_sample_label", "sample_label", "is_b", "jet_flavor", "root_file", "event_in_file", "jet_rank"}
@@ -41,6 +43,14 @@ def load_split(dataset_dir: Path, name: str) -> pd.DataFrame:
     raise FileNotFoundError(f"Missing {name} dataset: expected {parquet_path} or {csv_path}")
 
 
+def load_optional_split(dataset_dir: Path, name: str) -> pd.DataFrame | None:
+    parquet_path = dataset_dir / f"{name}.parquet"
+    csv_path = dataset_dir / f"{name}.csv"
+    if parquet_path.exists() or csv_path.exists():
+        return load_split(dataset_dir, name)
+    return None
+
+
 def select_features(df: pd.DataFrame) -> list[str]:
     if "is_b" not in df:
         raise ValueError("Dataset is missing binary target column 'is_b'.")
@@ -51,10 +61,22 @@ def select_features(df: pd.DataFrame) -> list[str]:
 
 
 def select_score_columns(df: pd.DataFrame) -> list[str]:
-    columns = ["global_event_id", "root_file", "event_in_file", "jet_rank", "jet_flavor", "sample_label", "is_b"]
+    columns = [column for column in ("global_event_id", "root_file", "event_in_file", "jet_rank") if column in df]
     if "source_sample_label" in df:
-        columns.insert(4, "source_sample_label")
+        columns.append("source_sample_label")
+    columns.extend(column for column in ("jet_flavor", "truth_label", "sample_label", "truth_known", "is_b") if column in df)
     return columns
+
+
+def score_companion_split(model: RandomForestClassifier, companion: pd.DataFrame, features: list[str], split_name: str) -> np.ndarray:
+    missing = sorted(set(features) - set(companion.columns))
+    if missing:
+        raise ValueError(f"{split_name} companion dataset is missing feature columns: {missing}")
+    matrix = companion[features].to_numpy(dtype=np.float64)
+    if not np.isfinite(matrix).all():
+        bad_columns = [feature for feature in features if not np.isfinite(companion[feature].to_numpy(dtype=np.float64)).all()]
+        raise ValueError(f"{split_name} companion dataset has non-finite values in: {bad_columns}")
+    return model.predict_proba(matrix)[:, 1]
 
 
 def validate_inputs(df: pd.DataFrame, features: list[str], split_name: str) -> tuple[np.ndarray, np.ndarray]:
@@ -85,7 +107,11 @@ def select_operating_threshold(scores: np.ndarray, is_b: np.ndarray, target_effi
         raise ValueError("target_efficiency must be between 0 and 1.")
     if not np.any(is_b == 1):
         raise ValueError("Threshold selection requires at least one b jet.")
-    return float(np.quantile(scores[is_b == 1], 1 - target_efficiency))
+    candidates = np.unique(scores)
+    eligible = candidates[(scores[:, None] >= candidates)[is_b == 1].mean(axis=0) >= target_efficiency]
+    if not len(eligible):
+        raise ValueError("No observed score threshold meets the requested b efficiency.")
+    return float(eligible.max())
 
 
 def operating_point(test: pd.DataFrame, scores: np.ndarray, threshold: float) -> dict[str, float | None]:
@@ -143,6 +169,8 @@ def main() -> None:
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     train, val, test = (load_split(dataset_dir, name) for name in ("train", "val", "test"))
+    val_companion = load_optional_split(dataset_dir, "val_companion")
+    test_companion = load_optional_split(dataset_dir, "test_companion")
     features = select_features(train)
     x_train, y_train = validate_inputs(train, features, "train")
     x_val, y_val = validate_inputs(val, features, "validation")
@@ -159,6 +187,23 @@ def main() -> None:
     keyed_scores = test[select_score_columns(test)].copy()
     keyed_scores["score_rf"] = test_scores
     keyed_scores.to_csv(output_dir / "rf_test_scores.csv", index=False)
+    validation_keyed_scores = val[select_score_columns(val)].copy()
+    validation_keyed_scores["score_rf"] = val_scores
+    validation_keyed_scores.to_csv(output_dir / "rf_validation_scores.csv", index=False)
+    test_companion_scores = None
+    if val_companion is not None:
+        validation_companion_scores = val_companion[select_score_columns(val_companion)].copy()
+        validation_companion_scores["score_rf"] = score_companion_split(model, val_companion, features, "validation")
+        validation_companion_scores.to_csv(output_dir / "rf_validation_companion_scores.csv", index=False)
+    if test_companion is not None:
+        test_companion_scores = test_companion[select_score_columns(test_companion)].copy()
+        test_companion_scores["score_rf"] = score_companion_split(model, test_companion, features, "test")
+        test_companion_scores.to_csv(output_dir / "rf_test_companion_scores.csv", index=False)
+    working_points = select_working_points(validation_keyed_scores, "score_rf")
+    working_point_report = evaluate_working_points(keyed_scores, working_points, "score_rf", event_scores=test_companion_scores)
+    event_score_source = "test_companion" if test_companion_scores is not None else "test"
+    (output_dir / "rf_working_points.json").write_text(json.dumps({"threshold_source": "validation", "event_score_source": event_score_source, "working_points": working_point_report}, indent=2) + "\n")
+    plot_working_point_report(working_point_report, str(output_dir / "rf_working_points.png"))
     plot_score_distribution(test, test_scores, output_dir)
     plot_feature_importance(importances, output_dir)
     plot_performance(y_test, test_scores, output_dir)
@@ -172,6 +217,7 @@ def main() -> None:
             "validation_b_efficiency": float((val_scores[y_val == 1] >= threshold).mean()),
             "test_metrics": operating_point(test, test_scores, threshold),
         },
+        "working_points": {"threshold_source": "validation", "event_score_source": event_score_source, "report": "rf_working_points.json"},
         "rf_configuration": {"seed": args.seed, "n_estimators": args.n_estimators, "max_depth": args.max_depth, "min_samples_leaf": args.min_samples_leaf, "class_weight": "balanced", "n_jobs": -1},
     }
     (output_dir / "rf_metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")

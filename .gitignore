@@ -12,3 +12,5 @@ venv/
 *.pdf
 *.atl
 /openspec/*
+__pycache__/
+/outputs/

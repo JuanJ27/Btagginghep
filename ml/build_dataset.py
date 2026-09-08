@@ -52,7 +52,7 @@ BRANCHES = [
 ]
 
 JET_CONE = 0.4
-MAX_JETS_PER_EVENT = 4
+MAX_JETS_PER_EVENT = None
 SEED = 42
 SPLIT_RATIOS = {"train": 0.70, "val": 0.15, "test": 0.15}
 PT_REGIONS = {
@@ -66,6 +66,10 @@ JET_FLAVOR_MAPPING = {
     "abs(flavor) == 4": "c",
     "abs(flavor) in {1, 2, 3}": "uds",
     "flavor == 21": "g",
+}
+COMPANION_METADATA_COLUMNS = {
+    "source_sample_label", "truth_label", "truth_known", "is_b", "jet_flavor",
+    "root_file", "event_in_file", "jet_rank", "global_event_id",
 }
 
 
@@ -385,6 +389,18 @@ def derive_jet_labels(source_sample_label: str, jet_flavor: float, label_source:
     }
 
 
+def derive_companion_labels(source_sample_label: str, jet_flavor: float) -> dict:
+    """Return truth metadata for every selected reconstructed jet."""
+    truth_label, _ = map_jet_flavor(jet_flavor)
+    return {
+        "source_sample_label": source_sample_label,
+        "truth_label": truth_label if truth_label is not None else pd.NA,
+        "truth_known": truth_label is not None,
+        "is_b": int(truth_label == "b") if truth_label is not None else pd.NA,
+        "jet_flavor": jet_flavor,
+    }
+
+
 def empty_truth_summary() -> dict:
     return {"matched_jets": 0, "unmatched_jets": 0, "unmatched_by_reason_and_raw_flavor": {}}
 
@@ -400,10 +416,17 @@ def record_truth_label(summary: dict, jet_flavor: float) -> None:
     counts[raw_value] = counts.get(raw_value, 0) + 1
 
 
-def process_one_file(root_file: Path, source_sample_label: str, pt_region: str, label_source: str) -> tuple[pd.DataFrame, dict]:
+def process_one_file(
+    root_file: Path,
+    source_sample_label: str,
+    pt_region: str,
+    label_source: str,
+    max_jets_per_event: int | None = MAX_JETS_PER_EVENT,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     if ak is None or uproot is None:
         raise RuntimeError("ROOT processing requires the awkward and uproot packages.")
-    rows = []
+    supervised_rows = []
+    companion_rows = []
     truth_summary = empty_truth_summary()
     event_counter = 0
 
@@ -425,16 +448,13 @@ def process_one_file(root_file: Path, source_sample_label: str, pt_region: str, 
             trk_d0 = np.asarray(ak.to_numpy(batch["Track.D0"][ievt]), dtype=np.float32)
             trk_dz = np.asarray(ak.to_numpy(batch["Track.DZ"][ievt]), dtype=np.float32)
 
-            n_jets = min(len(jet_pt), MAX_JETS_PER_EVENT)
+            n_jets = len(jet_pt) if max_jets_per_event is None else min(len(jet_pt), max_jets_per_event)
 
             for j in range(n_jets):
                 if not passes_pt_region(float(jet_pt[j]), pt_region):
                     continue
                 flavor = float(jet_flavor[j])
                 record_truth_label(truth_summary, flavor)
-                labels = derive_jet_labels(source_sample_label, flavor, label_source)
-                if labels is None:
-                    continue
                 feats = compute_jet_features(
                     jet_pt=float(jet_pt[j]),
                     jet_eta=float(jet_eta[j]),
@@ -449,16 +469,28 @@ def process_one_file(root_file: Path, source_sample_label: str, pt_region: str, 
                     trk_dz=trk_dz,
                 )
 
-                feats.update(labels)
                 feats["root_file"] = str(root_file)
                 feats["event_in_file"] = event_counter
                 feats["jet_rank"] = j
                 feats["global_event_id"] = f"{root_file}::evt::{event_counter}"
-                rows.append(feats)
+                companion_feats = feats.copy()
+                companion_feats.update(derive_companion_labels(source_sample_label, flavor))
+                companion_rows.append(companion_feats)
+
+                labels = derive_jet_labels(source_sample_label, flavor, label_source)
+                if labels is not None:
+                    supervised_feats = feats.copy()
+                    supervised_feats.update(labels)
+                    supervised_rows.append(supervised_feats)
 
             event_counter += 1
 
-    return pd.DataFrame(rows), truth_summary
+    companion_df = pd.DataFrame(companion_rows)
+    if not companion_df.empty:
+        companion_df["truth_label"] = companion_df["truth_label"].astype("string")
+        companion_df["is_b"] = companion_df["is_b"].astype("Int64")
+        companion_df["truth_known"] = companion_df["truth_known"].astype(bool)
+    return pd.DataFrame(supervised_rows), companion_df, truth_summary
 
 
 # ============================================================
@@ -527,6 +559,26 @@ def split_by_event(full_df: pd.DataFrame, ratios: dict[str, float] = SPLIT_RATIO
     return train_df, val_df, test_df, train_events, val_events, test_events
 
 
+def split_supervised_and_companions(
+    supervised_df: pd.DataFrame,
+    companion_df: pd.DataFrame,
+    ratios: dict[str, float] = SPLIT_RATIOS,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Assign event splits once from all selected reconstructed jets."""
+    companion_train, companion_val, companion_test, train_events, val_events, test_events = split_by_event(
+        companion_df, ratios, "source_sample_label"
+    )
+    split_ids = (train_events["global_event_id"], val_events["global_event_id"], test_events["global_event_id"])
+    train_df, val_df, test_df = (
+        supervised_df[supervised_df["global_event_id"].isin(event_ids)].copy()
+        for event_ids in split_ids
+    )
+    return (
+        train_df, val_df, test_df, companion_train, companion_val, companion_test,
+        train_events, val_events, test_events,
+    )
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -539,6 +591,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-profile", choices=sorted(profiles), default=default_profile, help="Input provenance profile; independent from --pt-region. Default: discover_all.")
     parser.add_argument("--pt-region", choices=PT_REGIONS, default="all", help="Jet pT selection: all, lt20 (< 20), or gt20 (> 20).")
     parser.add_argument("--label-source", choices=LABEL_SOURCES, default="sample", help="Target label source: sample (folder provenance) or jet_flavor (Delphes Jet.Flavor truth).")
+    parser.add_argument("--max-jets-per-event", type=int, default=MAX_JETS_PER_EVENT, help="Optional maximum selected jets per event; default: no cap.")
     parser.add_argument("--audit-only", action="store_true", help="Validate selected ROOT inputs, write input_audit.json, and exit before jet processing.")
     return parser.parse_args()
 
@@ -550,6 +603,11 @@ def class_counts(df: pd.DataFrame) -> dict[str, int]:
 def source_target_contingency(df: pd.DataFrame) -> dict[str, dict[str, int]]:
     table = pd.crosstab(df["source_sample_label"], df["sample_label"])
     return {source: {target: int(count) for target, count in row.items() if count} for source, row in table.to_dict(orient="index").items()}
+
+
+def companion_counts(df: pd.DataFrame) -> dict[str, int]:
+    known = int(df["truth_known"].sum())
+    return {"total_jets": int(len(df)), "truth_known_jets": known, "unknown_truth_jets": int(len(df) - known)}
 
 
 def validate_binary_targets(df: pd.DataFrame, label_source: str) -> None:
@@ -579,6 +637,9 @@ def run(args: argparse.Namespace) -> None:
     data_dir = args.data_dir.resolve()
     output_dir = args.output_dir.resolve()
     label_source = getattr(args, "label_source", "sample")
+    max_jets_per_event = getattr(args, "max_jets_per_event", MAX_JETS_PER_EVENT)
+    if max_jets_per_event is not None and max_jets_per_event <= 0:
+        raise ValueError("max_jets_per_event must be positive when set.")
     output_dir.mkdir(parents=True, exist_ok=True)
     _, profiles = load_source_profiles()
     profile = profiles.get(args.source_profile)
@@ -632,21 +693,26 @@ def run(args: argparse.Namespace) -> None:
         raise RuntimeError(f"No valid ROOT files found under {data_dir} for source profile '{args.source_profile}'.")
 
     all_dfs = []
+    all_companion_dfs = []
     truth_summary = empty_truth_summary()
 
     for root_file, label in items:
         print(f"Processing {root_file.name} as {label}")
-        df, file_truth_summary = process_one_file(root_file, label, args.pt_region, label_source)
+        df, companion_df, file_truth_summary = process_one_file(
+            root_file, label, args.pt_region, label_source, max_jets_per_event
+        )
         truth_summary["matched_jets"] += file_truth_summary["matched_jets"]
         truth_summary["unmatched_jets"] += file_truth_summary["unmatched_jets"]
         for reason, raw_counts in file_truth_summary["unmatched_by_reason_and_raw_flavor"].items():
             counts = truth_summary["unmatched_by_reason_and_raw_flavor"].setdefault(reason, {})
             for raw_value, count in raw_counts.items():
                 counts[raw_value] = counts.get(raw_value, 0) + count
-        print(f"  -> {len(df)} jets")
+        print(f"  -> {len(df)} supervised jets, {len(companion_df)} companion jets")
         all_dfs.append(df)
+        all_companion_dfs.append(companion_df)
 
     full_df = pd.concat(all_dfs, ignore_index=True)
+    full_companion_df = pd.concat(all_companion_dfs, ignore_index=True)
 
     if full_df.empty and label_source == "sample":
         raise RuntimeError(f"No jets passed pT region '{args.pt_region}' ({PT_REGIONS[args.pt_region][0]}).")
@@ -659,8 +725,11 @@ def run(args: argparse.Namespace) -> None:
     print(full_df["sample_label"].value_counts())
 
     split_ratios = validate_split_ratios(SPLIT_RATIOS)
-    split_stratum = "source_sample_label" if label_source == "jet_flavor" else "sample_label"
-    train_df, val_df, test_df, train_events, val_events, test_events = split_by_event(full_df, split_ratios, split_stratum)
+    split_stratum = "source_sample_label"
+    (
+        train_df, val_df, test_df, companion_train_df, companion_val_df, companion_test_df,
+        train_events, val_events, test_events,
+    ) = split_supervised_and_companions(full_df, full_companion_df, split_ratios)
 
     print("\nSplit summary:")
     print(f"Train jets: {len(train_df)}")
@@ -679,10 +748,15 @@ def run(args: argparse.Namespace) -> None:
     train_path = save_dataframe(train_df, output_dir / "train")
     val_path = save_dataframe(val_df, output_dir / "val")
     test_path = save_dataframe(test_df, output_dir / "test")
+    companion_train_path = save_dataframe(companion_train_df, output_dir / "train_companion")
+    companion_val_path = save_dataframe(companion_val_df, output_dir / "val_companion")
+    companion_test_path = save_dataframe(companion_test_df, output_dir / "test_companion")
 
     source_inventory = [str(root_file.resolve()) for root_file, _ in items]
     metadata_columns = ["source_sample_label", "sample_label", "is_b", "jet_flavor", "root_file", "event_in_file", "jet_rank", "global_event_id"]
     feature_columns = [column for column in full_df.columns if column not in metadata_columns]
+    companion_metadata_columns = sorted(COMPANION_METADATA_COLUMNS)
+    companion_feature_columns = [column for column in full_companion_df.columns if column not in COMPANION_METADATA_COLUMNS]
 
     manifest = {
         "data_dir": str(data_dir),
@@ -704,21 +778,41 @@ def run(args: argparse.Namespace) -> None:
         "generator_settings": {
             "seed": SEED,
             "jet_cone": JET_CONE,
-            "max_jets_per_event": MAX_JETS_PER_EVENT,
+            "max_jets_per_event": max_jets_per_event,
+            "max_jets_policy": "unlimited" if max_jets_per_event is None else "explicit_cap",
             "branches": BRANCHES,
         },
         "split": {
             "method": "event_grouped_stratified",
             "stratification_basis": split_stratum,
+            "assignment_scope": "all selected reconstructed-jet events; reused by supervised and companion splits",
             "seed": SEED,
             "ratios": split_ratios,
             "applied_event_ratios": {
-                "train": len(train_events) / len(full_df[["global_event_id"]].drop_duplicates()),
-                "val": len(val_events) / len(full_df[["global_event_id"]].drop_duplicates()),
-                "test": len(test_events) / len(full_df[["global_event_id"]].drop_duplicates()),
+                "train": len(train_events) / len(full_companion_df[["global_event_id"]].drop_duplicates()),
+                "val": len(val_events) / len(full_companion_df[["global_event_id"]].drop_duplicates()),
+                "test": len(test_events) / len(full_companion_df[["global_event_id"]].drop_duplicates()),
             },
         },
         "schema": {"columns": full_df.columns.tolist(), "feature_columns": feature_columns, "metadata_columns": metadata_columns},
+        "companion": {
+            "definition": "All reconstructed jets that pass the configured pT selection; no per-event jet cap is applied." if max_jets_per_event is None else "All reconstructed jets that pass the configured pT selection, limited by the explicit per-event jet cap.",
+            "label_contract": "truth_label and is_b are NA when Jet.Flavor is unmapped; truth_known identifies recognised b/c/uds/g truth.",
+            "schema": {
+                "columns": full_companion_df.columns.tolist(),
+                "scoring_feature_columns": companion_feature_columns,
+                "metadata_and_label_columns": companion_metadata_columns,
+            },
+            "counts": {
+                "full": companion_counts(full_companion_df),
+                "train": companion_counts(companion_train_df),
+                "val": companion_counts(companion_val_df),
+                "test": companion_counts(companion_test_df),
+            },
+            "outputs": {
+                "train": str(companion_train_path), "val": str(companion_val_path), "test": str(companion_test_path),
+            },
+        },
         "sample_counts": {"full": class_counts(full_df), "train": class_counts(train_df), "val": class_counts(val_df), "test": class_counts(test_df)},
         "target_class_counts_by_split": {"full": class_counts(full_df), "train": class_counts(train_df), "val": class_counts(val_df), "test": class_counts(test_df)},
         "source_target_contingency": source_target_contingency(full_df),
@@ -747,6 +841,9 @@ def run(args: argparse.Namespace) -> None:
     print(" -", train_path)
     print(" -", val_path)
     print(" -", test_path)
+    print(" -", companion_train_path)
+    print(" -", companion_val_path)
+    print(" -", companion_test_path)
     print(" -", output_dir / "dataset_manifest.json")
     print("\nDone.")
 
