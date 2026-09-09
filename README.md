@@ -63,6 +63,31 @@ the presentation notebook honestly evaluates its events from supervised test
 rows only. Newly built datasets include companions for all-reconstructed-event
 evaluation.
 
+## Local-Aer VQC presets
+
+The conditional b/c VQC has three four-feature, four-qubit presets for bounded
+ablation studies. They retain the same train-only scaling, keyed b/c rows,
+seed, shots, and optimizer, so each run changes one circuit-depth dimension:
+
+- `zz1_real1_linear`: baseline, one ZZ feature-map and one RealAmplitudes layer.
+- `zz2_real1_linear`: two ZZ feature-map layers; tests additional data encoding depth.
+- `zz1_real2_linear`: two RealAmplitudes layers; tests additional variational capacity.
+
+For example, run a local simulator-only smoke comparison with:
+
+```bash
+python -m ml.train_hybrid_bc \
+  --dataset-dir outputs/high20_jet_flavor \
+  --output-dir outputs/hybrid_bc_vqc_zz1_real2 \
+  --mode SMOKE_TEST --quantum angle \
+  --quantum-preset zz1_real2_linear --quantum-shots 1024 \
+  --quantum-maxiter 50
+```
+
+Each report persists the preset, package versions, seed, shots, and a hash of
+the b/c rows used in each split. These are local-Aer controls only and do not
+establish quantum advantage.
+
 ## Authoritative low-pT gate
 
 `THESIS_RUN_AUTHORITATIVE_LOWPT` in `ml/hybrid_bc_contract.py` is

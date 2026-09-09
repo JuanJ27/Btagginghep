@@ -7,8 +7,8 @@ from types import ModuleType
 from ml.hybrid_bc_contract import HybridContractError, SMOKE_TEST, THESIS_RUN_AUTHORITATIVE_LOWPT, validate_mode
 from ml.hybrid_bc_features import BC_FEATURES, bc_rows, feature_matrix
 from ml.hybrid_bc_gate import gate_mask, select_band_half_width
-from ml.hybrid_bc_models import build_angle_encoded_vqc, fit_angle_vqc, reject_amplitude_encoding, require_qiskit_vqc
-from ml.train_hybrid_bc import evaluate_bc_model, select_bc_threshold, validate_bc_scores, write_comparison_figure
+from ml.hybrid_bc_models import ANGLE_VQC_PRESETS, angle_vqc_preset, build_angle_encoded_vqc, fit_angle_vqc, reject_amplitude_encoding, require_qiskit_vqc
+from ml.train_hybrid_bc import evaluate_bc_model, keyed_row_fingerprint, select_bc_threshold, validate_bc_scores, write_comparison_figure
 
 
 def frame(labels=("b", "c", "g", "uds")):
@@ -111,6 +111,15 @@ def test_angle_vqc_uses_qiskit_2_circuit_factories_lazily(monkeypatch):
     assert calls["vqc"]["optimizer"] == "cobyla"
 
 
+def test_angle_vqc_presets_change_one_depth_dimension_at_a_time():
+    assert set(ANGLE_VQC_PRESETS) == {"zz1_real1_linear", "zz2_real1_linear", "zz1_real2_linear"}
+    baseline = angle_vqc_preset("zz1_real1_linear")
+    assert angle_vqc_preset("zz2_real1_linear") == {**baseline, "feature_map_reps": 2}
+    assert angle_vqc_preset("zz1_real2_linear") == {**baseline, "ansatz_reps": 2}
+    with pytest.raises(HybridContractError, match="Unknown angle VQC preset"):
+        angle_vqc_preset("unknown")
+
+
 def test_angle_vqc_fits_train_only_angular_preprocessing_and_scores_validation_and_test(monkeypatch):
     from ml import hybrid_bc_models
     calls = {}
@@ -124,9 +133,11 @@ def test_angle_vqc_fits_train_only_angular_preprocessing_and_scores_validation_a
             calls.setdefault("predict", []).append(x.copy())
             return np.tile([0.25, 0.75], (len(x), 1))
 
-    def build_fake_vqc(maxiter, seed):
+    def build_fake_vqc(maxiter, seed, preset, shots):
         calls["maxiter"] = maxiter
         calls["seed"] = seed
+        calls["preset"] = preset
+        calls["shots"] = shots
         return FakeVQC()
 
     monkeypatch.setattr(hybrid_bc_models, "build_angle_encoded_vqc", build_fake_vqc)
@@ -134,7 +145,7 @@ def test_angle_vqc_fits_train_only_angular_preprocessing_and_scores_validation_a
     x_val = np.array([[0., 0., 0., 0.]])
     x_test = np.array([[30., 30., 30., 30.]])
 
-    _, preprocessor, validation_b_probability, test_b_probability = fit_angle_vqc(x_train, np.array([0, 1]), x_val, x_test, maxiter=7, seed=13)
+    _, preprocessor, validation_b_probability, test_b_probability = fit_angle_vqc(x_train, np.array([0, 1]), x_val, x_test, maxiter=7, seed=13, preset="zz2_real1_linear", shots=512)
 
     assert preprocessor.data_min_.tolist() == [10.] * 4
     assert preprocessor.data_max_.tolist() == [20.] * 4
@@ -143,6 +154,8 @@ def test_angle_vqc_fits_train_only_angular_preprocessing_and_scores_validation_a
     assert calls["predict"][1].tolist() == [[np.pi] * 4]
     assert calls["maxiter"] == 7
     assert calls["seed"] == 13
+    assert calls["preset"] == "zz2_real1_linear"
+    assert calls["shots"] == 512
     assert validation_b_probability.tolist() == [0.75]
     assert test_b_probability.tolist() == [0.75]
 
@@ -193,3 +206,9 @@ def test_bc_comparison_figure_is_written_for_matched_test_rows(tmp_path):
 
     assert output_path.is_file()
     assert output_path.stat().st_size > 0
+
+
+def test_keyed_row_fingerprint_is_stable_for_the_same_ordered_rows():
+    data = frame(("b", "c"))
+    assert keyed_row_fingerprint(data, "test") == keyed_row_fingerprint(data.copy(), "test")
+    assert keyed_row_fingerprint(data, "test") != keyed_row_fingerprint(data.iloc[::-1], "test")

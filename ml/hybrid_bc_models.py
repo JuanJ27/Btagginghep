@@ -13,6 +13,21 @@ from sklearn.svm import SVC
 from ml.hybrid_bc_contract import HybridContractError
 
 
+ANGLE_VQC_PRESETS = {
+    "zz1_real1_linear": {"feature_map_reps": 1, "ansatz_reps": 1, "entanglement": "linear"},
+    "zz2_real1_linear": {"feature_map_reps": 2, "ansatz_reps": 1, "entanglement": "linear"},
+    "zz1_real2_linear": {"feature_map_reps": 1, "ansatz_reps": 2, "entanglement": "linear"},
+}
+
+
+def angle_vqc_preset(name: str) -> dict:
+    """Return a controlled four-feature VQC configuration by its stable name."""
+    try:
+        return ANGLE_VQC_PRESETS[name].copy()
+    except KeyError as error:
+        raise HybridContractError(f"Unknown angle VQC preset '{name}'. Choose one of: {', '.join(sorted(ANGLE_VQC_PRESETS))}.") from error
+
+
 def classical_controls(seed: int) -> dict:
     return {
         "logistic_regression": make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000, class_weight="balanced", random_state=seed)),
@@ -46,15 +61,18 @@ def require_qiskit_vqc():
     return zz_feature_map, real_amplitudes, AerSimulator, SamplerV2, COBYLA, VQC
 
 
-def build_angle_encoded_vqc(maxiter: int = 50, seed: int = 42):
-    """Build the planned four-qubit, shallow angle-encoding VQC configuration."""
+def build_angle_encoded_vqc(maxiter: int = 50, seed: int = 42, preset: str = "zz1_real1_linear", shots: int = 1024):
+    """Build a seeded local-Aer VQC from a controlled four-feature preset."""
     if maxiter < 1:
         raise HybridContractError("VQC COBYLA maxiter must be positive.")
+    if shots < 1:
+        raise HybridContractError("VQC sampler shots must be positive.")
+    configuration = angle_vqc_preset(preset)
     zz_feature_map, real_amplitudes, AerSimulator, SamplerV2, COBYLA, VQC = require_qiskit_vqc()
     simulator = AerSimulator()  # Explicitly local simulator; never a provider/backend service.
-    sampler = SamplerV2.from_backend(simulator, default_shots=1024, seed=seed)
-    feature_map = zz_feature_map(feature_dimension=4, reps=1)
-    ansatz = real_amplitudes(num_qubits=4, reps=1, entanglement="linear")
+    sampler = SamplerV2.from_backend(simulator, default_shots=shots, seed=seed)
+    feature_map = zz_feature_map(feature_dimension=4, reps=configuration["feature_map_reps"])
+    ansatz = real_amplitudes(num_qubits=4, reps=configuration["ansatz_reps"], entanglement=configuration["entanglement"])
     initial_point = np.random.default_rng(seed).uniform(-0.1, 0.1, ansatz.num_parameters)
     return VQC(feature_map=feature_map, ansatz=ansatz, sampler=sampler, optimizer=COBYLA(maxiter=maxiter), initial_point=initial_point)
 
@@ -66,6 +84,8 @@ def fit_angle_vqc(
     x_test: np.ndarray,
     maxiter: int = 50,
     seed: int = 42,
+    preset: str = "zz1_real1_linear",
+    shots: int = 1024,
 ) -> tuple[object, MinMaxScaler, np.ndarray, np.ndarray]:
     """Fit angular scaling on b/c training rows only, then score validation and test rows."""
     if x_train.shape[1] != 4:
@@ -76,7 +96,7 @@ def fit_angle_vqc(
     angular_train = preprocessor.transform(x_train)
     angular_validation = preprocessor.transform(x_validation)
     angular_test = preprocessor.transform(x_test)
-    model = build_angle_encoded_vqc(maxiter=maxiter, seed=seed)
+    model = build_angle_encoded_vqc(maxiter=maxiter, seed=seed, preset=preset, shots=shots)
     model.fit(angular_train, y_train)
     validation_probabilities = np.asarray(model.predict_proba(angular_validation), dtype=float)
     test_probabilities = np.asarray(model.predict_proba(angular_test), dtype=float)

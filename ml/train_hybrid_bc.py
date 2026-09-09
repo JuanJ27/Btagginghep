@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+from importlib.metadata import version
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +14,7 @@ from sklearn.metrics import roc_auc_score, roc_curve
 from ml.hybrid_bc_contract import KEY_COLUMNS, SMOKE_TEST, THESIS_RUN_AUTHORITATIVE_LOWPT, HybridContractError, load_manifest, validate_mode
 from ml.hybrid_bc_features import BC_FEATURES, bc_rows, feature_matrix, validate_feature_frame
 from ml.hybrid_bc_gate import contamination_report, fit_final_gate, gate_mask, grouped_oof_rf_scores, select_band_half_width, select_rf_threshold
-from ml.hybrid_bc_models import fit_angle_vqc, fit_controls, reject_amplitude_encoding
+from ml.hybrid_bc_models import ANGLE_VQC_PRESETS, angle_vqc_preset, fit_angle_vqc, fit_controls, reject_amplitude_encoding
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +30,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-bc-eval", type=int, default=2000, help="Common b/c validation/test rows per control; use 0 for all rows.")
     parser.add_argument("--quantum", choices=("disabled", "angle", "amplitude"), default="disabled")
     parser.add_argument("--quantum-maxiter", type=int, default=50, help="Bounded local COBYLA iterations for --quantum angle.")
+    parser.add_argument("--quantum-preset", choices=tuple(sorted(ANGLE_VQC_PRESETS)), default="zz1_real1_linear", help="Controlled four-feature angle-VQC architecture.")
+    parser.add_argument("--quantum-shots", type=int, default=1024, help="Seeded local-Aer shots per circuit evaluation.")
     return parser.parse_args()
 
 
@@ -78,6 +82,13 @@ def validate_bc_scores(frame: pd.DataFrame, scores: np.ndarray, model_name: str,
     if not np.isfinite(values).all() or (values < 0).any() or (values > 1).any():
         raise HybridContractError(f"{model_name} {split_name} scores must be finite conditional probabilities in [0, 1].")
     return values
+
+
+def keyed_row_fingerprint(frame: pd.DataFrame, split_name: str) -> str:
+    """Fingerprint the ordered key set so independent preset reports are auditable."""
+    validate_bc_rows(frame, split_name)
+    payload = frame.loc[:, list(KEY_COLUMNS)].to_csv(index=False, lineterminator="\n").encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def select_bc_threshold(validation_scores: np.ndarray, validation_labels: np.ndarray, target_b_efficiency: float) -> float:
@@ -184,13 +195,16 @@ def run(args: argparse.Namespace) -> dict:
     if args.quantum == "amplitude":
         reject_amplitude_encoding()
     if args.quantum == "angle":
-        _, _, validation_predictions["vqc_angle"], test_predictions["vqc_angle"] = fit_angle_vqc(
+        vqc_name = f"vqc_angle_{args.quantum_preset}"
+        _, _, validation_predictions[vqc_name], test_predictions[vqc_name] = fit_angle_vqc(
             feature_matrix(bc_train),
             (bc_train["sample_label"] == "b").to_numpy(int),
             feature_matrix(bc_val),
             feature_matrix(bc_test),
             maxiter=args.quantum_maxiter,
             seed=args.seed,
+            preset=args.quantum_preset,
+            shots=args.quantum_shots,
         )
     keyed_output(bc_test, test_predictions).to_parquet(output_dir / "bc_test_scores.parquet", index=False)
     comparison = {
@@ -203,10 +217,23 @@ def run(args: argparse.Namespace) -> dict:
         "feature_columns": list(BC_FEATURES),
         "semantic_contract": "Primary RF is b-vs-all. Conditional outputs are P(b | b/c study), not b-vs-all probabilities; g/uds are excluded from reranker outputs.",
         "gate": {"score_source_train": "grouped_out_of_fold_rf", "group_key": "global_event_id", "threshold_source": "validation", "threshold": threshold, "half_width": half_width, "train": contamination_report(gate_train, gate_mask(oof_scores, threshold, half_width)), "validation": contamination_report(splits["val"], gate_mask(val_scores, threshold, half_width)), "test": contamination_report(splits["test"], gate_mask(test_scores, threshold, half_width))},
-        "same_keyed_bc_rows": {"train": int(len(bc_train)), "validation": int(len(bc_val)), "test": int(len(bc_test))},
+        "same_keyed_bc_rows": {
+            "train": {"count": int(len(bc_train)), "fingerprint": keyed_row_fingerprint(bc_train, "train")},
+            "validation": {"count": int(len(bc_val)), "fingerprint": keyed_row_fingerprint(bc_val, "validation")},
+            "test": {"count": int(len(bc_test)), "fingerprint": keyed_row_fingerprint(bc_test, "test")},
+        },
         "model_comparison": {"row_set": "Each model is evaluated on the same keyed, truth-selected b/c validation and test gate rows.", "models": comparison},
         "classical_controls": list(models),
-        "quantum": {"requested": args.quantum, "encoding": "angle (4 qubits, shallow circuit)" if args.quantum == "angle" else "disabled", "optimizer": {"name": "COBYLA", "maxiter": args.quantum_maxiter} if args.quantum == "angle" else None, "claim": "Optional local-simulator control only; no quantum-advantage claim."},
+        "quantum": {
+            "requested": args.quantum,
+            "encoding": "angle (4 physical features, 4 qubits)" if args.quantum == "angle" else "disabled",
+            "preset": {"name": args.quantum_preset, **angle_vqc_preset(args.quantum_preset)} if args.quantum == "angle" else None,
+            "optimizer": {"name": "COBYLA", "maxiter": args.quantum_maxiter} if args.quantum == "angle" else None,
+            "shots": args.quantum_shots if args.quantum == "angle" else None,
+            "seed": args.seed if args.quantum == "angle" else None,
+            "library_versions": {"qiskit": version("qiskit"), "qiskit-aer": version("qiskit-aer"), "qiskit-machine-learning": version("qiskit-machine-learning")} if args.quantum == "angle" else None,
+            "claim": "Optional local-simulator control only; no quantum-advantage claim.",
+        },
     }
     (output_dir / "hybrid_bc_report.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
