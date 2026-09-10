@@ -1,0 +1,1 @@
+"""Sequential MadGraph campaign automation."""

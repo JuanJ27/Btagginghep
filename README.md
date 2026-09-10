@@ -88,6 +88,39 @@ Each report persists the preset, package versions, seed, shots, and a hash of
 the b/c rows used in each split. These are local-Aer controls only and do not
 establish quantum advantage.
 
+## Automated low-pT MadGraph campaign
+
+`production/madgraph/run_campaign.py` prepares and runs the `bbbar`, `ccbar`,
+`gg`, `uubar`, `ddbar`, `ssbar`, and inclusive QCD samples sequentially. It
+uses MadGraph internal multicore execution for each individual sample, but a
+global lock in the configured MG5 root and process check prevent overlapping
+MadGraph simulations.
+
+Review only `production/madgraph/lowpt_v1.toml` before use. It holds event
+counts, beam energies, pT and Delta-R cuts, jet radius, Delphes jet threshold,
+seeds, output location, and the internal core count. Eta is deliberately not a
+configuration option: the runner preserves MadGraph's process-specific default
+eta settings.
+
+```bash
+# No writes or simulations: inspect the exact campaign plan first.
+.venv/bin/python production/madgraph/run_campaign.py --dry-run
+
+# Run one 50k-event pilot per enabled sample, strictly one at a time.
+.venv/bin/python production/madgraph/run_campaign.py --execute
+
+# Resume only runs marked complete in the immutable campaign manifest.
+.venv/bin/python production/madgraph/run_campaign.py --execute --resume
+```
+
+Every successful run is checked against its executed banner and Delphes ROOT
+contract before the next sample begins. The runner validates the physical jet
+configuration, required Jet/Track branches, finite impact parameters, and
+truth-labelled jets in the configured fiducial region. It retains ROOT, LHE,
+cards, banners, command files, logs, and `campaign_manifest.json`; HEPMC is
+kept until Delphes and validation finish, then removed by default to save disk
+space.
+
 ## Authoritative low-pT gate
 
 `THESIS_RUN_AUTHORITATIVE_LOWPT` in `ml/hybrid_bc_contract.py` is

@@ -1,0 +1,35 @@
+# Edit this file, run --dry-run, then run with --execute.
+# Eta cuts are intentionally absent: the runner preserves MadGraph defaults.
+
+[campaign]
+name = "btag_lowpt_v1"
+mg5_root = "/home/juanm/mg5amcnlo"
+output_root = "/home/juanm/mg5amcnlo/campaigns/btag_lowpt_v1"
+
+# Use one run per sample for the pilot. Change to 4 after pilot validation.
+nevents = 50000
+runs_per_sample = 1
+
+# A single MadGraph instance runs at a time. This is its internal core count.
+cores = 4
+
+ebeam1 = 6800.0
+ebeam2 = 6800.0
+parton_pt_min = 5.0
+light_parton_dr_min = 0.4
+bb_dr_min = 0.0
+jet_radius = 0.4
+reco_jet_pt_min = 5.0
+keep_hepmc = false
+
+[samples]
+enabled = ["bbbar", "ccbar", "gg", "uubar", "ddbar", "ssbar", "inclusive"]
+
+[seeds]
+bbbar = 11001
+ccbar = 12001
+gg = 13001
+uubar = 14101
+ddbar = 14201
+ssbar = 14301
+inclusive = 15001
